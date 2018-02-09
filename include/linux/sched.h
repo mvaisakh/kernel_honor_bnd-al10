@@ -4104,4 +4104,11 @@ extern void sched_hwstatus_iodelay_caller(struct task_struct *tsk, u64 delta);
 extern void sched_account_ui_thread_io_block_counts(int msecs);
 #endif
 
+#ifdef CONFIG_DYNAMIC_STUNE_BOOST
+int do_stune_boost(char *st_name, int boost);
+int reset_stune_boost(char *st_name);
+#endif /* CONFIG_DYNAMIC_STUNE_BOOST */
+
+extern DEFINE_PER_CPU_READ_MOSTLY(int, sched_load_boost);
+
 #endif
