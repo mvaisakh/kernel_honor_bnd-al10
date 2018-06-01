@@ -16,8 +16,6 @@
 #include <asm/msr.h>
 #include <asm/paravirt.h>
 #include <asm/alternative.h>
-<<<<<<< HEAD
-=======
 #include <asm/pgtable.h>
 #include <asm/cacheflush.h>
 #include <asm/intel-family.h>
@@ -44,13 +42,10 @@ static u64 __ro_after_init x86_spec_ctrl_mask = SPEC_CTRL_IBRS;
  */
 u64 __ro_after_init x86_amd_ls_cfg_base;
 u64 __ro_after_init x86_amd_ls_cfg_ssbd_mask;
->>>>>>> 432e99b... x86/speculation/l1tf: Add sysfs reporting for l1tf
 
 void __init check_bugs(void)
 {
-<<<<<<< HEAD
-#ifdef CONFIG_X86_32
-=======
+
 	identify_boot_cpu();
 
 	/*
@@ -64,13 +59,11 @@ void __init check_bugs(void)
 		print_cpu_info(&boot_cpu_data);
 	}
 
->>>>>>> 929d3b2... cpu/hotplug: Set CPU_SMT_NOT_SUPPORTED early
 	/*
 	 * Regardless of whether PCID is enumerated, the SDM says
 	 * that it can't be enabled in 32-bit mode.
 	 */
 	setup_clear_cpu_cap(X86_FEATURE_PCID);
-#endif
 
 	identify_boot_cpu();
 #ifndef CONFIG_SMP
@@ -78,12 +71,9 @@ void __init check_bugs(void)
 	print_cpu_info(&boot_cpu_data);
 #endif
 
-<<<<<<< HEAD
-=======
 	l1tf_select_mitigation();
 
 #ifdef CONFIG_X86_32
->>>>>>> 432e99b... x86/speculation/l1tf: Add sysfs reporting for l1tf
 	/*
 	 * Check whether we are able to run this kernel safely on SMP.
 	 *
@@ -99,8 +89,7 @@ void __init check_bugs(void)
 	alternative_instructions();
 
 	fpu__init_check_bugs();
-<<<<<<< HEAD
-=======
+
 #else /* CONFIG_X86_64 */
 	alternative_instructions();
 
@@ -339,10 +328,8 @@ static enum spectre_v2_mitigation_cmd __init spectre_v2_parse_cmdline(void)
 		spec2_print_if_insecure(mitigation_options[i].option);
 
 	return cmd;
->>>>>>> 432e99b... x86/speculation/l1tf: Add sysfs reporting for l1tf
 }
-<<<<<<< HEAD
-=======
+
 
 static bool stibp_needed(void)
 {
@@ -481,8 +468,6 @@ retpoline_auto:
 }
 
 #undef pr_fmt
-<<<<<<< HEAD
-=======
 #define pr_fmt(fmt)	"Speculative Store Bypass: " fmt
 
 static enum ssb_mitigation ssb_mode = SPEC_STORE_BYPASS_NONE;
@@ -580,8 +565,8 @@ static enum ssb_mitigation_cmd __init __ssb_select_mitigation(void)
 	if (mode == SPEC_STORE_BYPASS_DISABLE) {
 		setup_force_cpu_cap(X86_FEATURE_SPEC_STORE_BYPASS_DISABLE);
 		/*
-		 * Intel uses the SPEC CTRL MSR Bit(2) for this, while AMD uses
-		 * a completely different MSR and bit dependent on family.
+		 * Intel uses the SPEC CTRL MSR Bit(2) for this, while AMD may
+		 * use a completely different MSR and bit dependent on family.
 		 */
 		switch (boot_cpu_data.x86_vendor) {
 		case X86_VENDOR_INTEL:
@@ -590,7 +575,13 @@ static enum ssb_mitigation_cmd __init __ssb_select_mitigation(void)
 			x86_spec_ctrl_set(SPEC_CTRL_RDS);
 			break;
 		case X86_VENDOR_AMD:
-			x86_amd_rds_enable();
+			if (!static_cpu_has(X86_FEATURE_MSR_SPEC_CTRL)) {
+				x86_amd_ssb_disable();
+				break;
+			}
+			x86_spec_ctrl_base |= SPEC_CTRL_SSBD;
+			x86_spec_ctrl_mask |= SPEC_CTRL_SSBD;
+			wrmsrl(MSR_IA32_SPEC_CTRL, x86_spec_ctrl_base);
 			break;
 		}
 	}
@@ -693,7 +684,6 @@ void x86_spec_ctrl_setup_ap(void)
 	if (ssb_mode == SPEC_STORE_BYPASS_DISABLE)
 		x86_amd_rds_enable();
 }
->>>>>>> 4272f52... nospec: Allow getting/setting on non-current task
 
 #ifdef CONFIG_SYSFS
 
@@ -723,8 +713,7 @@ ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 			       spectre_v2_module_string());
 		return ret;
 
-<<<<<<< HEAD
-=======
+
 	case X86_BUG_SPEC_STORE_BYPASS:
 		return sprintf(buf, "%s\n", ssb_strings[ssb_mode]);
 
@@ -733,7 +722,6 @@ ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 			return sprintf(buf, "Mitigation: Page Table Inversion\n");
 		break;
 
->>>>>>> 432e99b... x86/speculation/l1tf: Add sysfs reporting for l1tf
 	default:
 		break;
 	}
@@ -766,4 +754,3 @@ ssize_t cpu_show_l1tf(struct device *dev, struct device_attribute *attr, char *b
 	return cpu_show_common(dev, attr, buf, X86_BUG_L1TF);
 }
 #endif
->>>>>>> 24e4dd9... x86/bugs: Expose /sys/../spec_store_bypass
