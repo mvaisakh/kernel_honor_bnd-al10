@@ -331,7 +331,6 @@ static enum spectre_v2_mitigation_cmd __init spectre_v2_parse_cmdline(void)
 	return cmd;
 }
 
-
 static bool stibp_needed(void)
 {
 	if (spectre_v2_enabled == SPECTRE_V2_NONE)
@@ -685,6 +684,11 @@ ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 {
 	int ret;
 
+static ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
+			       char *buf, unsigned int bug)
+{
+	int ret;
+
 	if (!boot_cpu_has_bug(bug))
 		return sprintf(buf, "Not affected\n");
 
@@ -705,7 +709,6 @@ ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 			       (x86_spec_ctrl_base & SPEC_CTRL_STIBP) ? ", STIBP" : "",
 			       spectre_v2_module_string());
 		return ret;
-
 
 	case X86_BUG_SPEC_STORE_BYPASS:
 		return sprintf(buf, "%s\n", ssb_strings[ssb_mode]);
