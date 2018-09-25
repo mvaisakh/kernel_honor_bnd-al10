@@ -258,7 +258,8 @@ static int ptrace_check_attach(struct task_struct *child, bool ignore_state)
 
 static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 {
-	int check_cap = (mode & PTRACE_MODE_PERF_EVENT) ? CAP_PERF_EVENT : CAP_SYS_PTRACE;
+	if (mode & PTRACE_MODE_SCHED)
+		return false;
 
 	if (mode & PTRACE_MODE_NOAUDIT)
 		return has_ns_capability_noaudit(current, ns, check_cap);
@@ -327,7 +328,14 @@ ok:
 	     !ptrace_has_cap(mm->user_ns, mode)))
 	    return -EPERM;
 
+	if (mode & PTRACE_MODE_SCHED)
+		return 0;
 	return security_ptrace_access_check(task, mode);
+}
+
+bool ptrace_may_access_sched(struct task_struct *task, unsigned int mode)
+{
+	return __ptrace_may_access(task, mode | PTRACE_MODE_SCHED);
 }
 
 bool ptrace_may_access(struct task_struct *task, unsigned int mode)
