@@ -171,8 +171,8 @@ static void nf_ct_frag6_expire(unsigned long data)
 	fq = container_of((struct inet_frag_queue *)data, struct frag_queue, q);
 	net = container_of(fq->q.net, struct net, nf_frag.frags);
 
-
 	ip6frag_expire_frag_queue(net, fq);
+
 }
 
 /* Creation primitives. */
@@ -259,7 +259,7 @@ static int nf_ct_frag6_queue(struct frag_queue *fq, struct sk_buff *skb,
 			 * this case. -DaveM
 			 */
 			pr_debug("end of fragment not rounded to 8 bytes.\n");
-			inet_frag_kill(&fq->q, &nf_frags);
+			inet_frag_kill(&fq->q);
 			return -EPROTO;
 		}
 		if (end > fq->q.len) {
@@ -317,14 +317,6 @@ static int nf_ct_frag6_queue(struct frag_queue *fq, struct sk_buff *skb,
 	    fq->q.meat == fq->q.len) {
 		unsigned long orefdst = skb->_skb_refdst;
 
-		skb->_skb_refdst = 0UL;
-		err = nf_ct_frag6_reasm(fq, skb, prev, dev);
-		skb->_skb_refdst = orefdst;
-		return err;
-	}
-
-	skb_dst_drop(skb);
-	return -EINPROGRESS;
 
 insert_error:
 	if (err == IPFRAG_DUP)
@@ -349,7 +341,7 @@ static int nf_ct_frag6_reasm(struct frag_queue *fq, struct sk_buff *skb,
 	int payload_len;
 	u8 ecn;
 
-	inet_frag_kill(&fq->q, &nf_frags);
+	inet_frag_kill(&fq->q);
 
 	ecn = ip_frag_ecn_table[fq->ecn];
 	if (unlikely(ecn == 0xff))
@@ -514,25 +506,32 @@ int nf_ct_frag6_gather(struct net *net, struct sk_buff *skb, u32 user)
 		ret = -EINPROGRESS;
 
 	spin_unlock_bh(&fq->q.lock);
-	inet_frag_put(&fq->q, &nf_frags);
+	inet_frag_put(&fq->q);
 	return ret;
 }
 EXPORT_SYMBOL_GPL(nf_ct_frag6_gather);
 
 static int nf_ct_net_init(struct net *net)
 {
+	int res;
 	net->nf_frag.frags.high_thresh = IPV6_FRAG_HIGH_THRESH;
 	net->nf_frag.frags.low_thresh = IPV6_FRAG_LOW_THRESH;
 	net->nf_frag.frags.timeout = IPV6_FRAG_TIMEOUT;
-	inet_frags_init_net(&net->nf_frag.frags);
+	net->nf_frag.frags.f = &nf_frags;
 
-	return nf_ct_frag6_sysctl_register(net);
+	res = inet_frags_init_net(&net->nf_frag.frags);
+	if (res < 0)
+		return res;
+	res = nf_ct_frag6_sysctl_register(net);
+	if (res < 0)
+		inet_frags_exit_net(&net->nf_frag.frags);
+	return res;
 }
 
 static void nf_ct_net_exit(struct net *net)
 {
 	nf_ct_frags6_sysctl_unregister(net);
-	inet_frags_exit_net(&net->nf_frag.frags, &nf_frags);
+	inet_frags_exit_net(&net->nf_frag.frags);
 }
 
 static struct pernet_operations nf_ct_net_ops = {
