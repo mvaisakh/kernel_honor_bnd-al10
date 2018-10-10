@@ -544,6 +544,7 @@ static int __net_init lowpan_frags_init_net(struct net *net)
 {
 	struct netns_ieee802154_lowpan *ieee802154_lowpan =
 		net_ieee802154_lowpan(net);
+	int res;
 
 	int res;
 	
@@ -551,7 +552,7 @@ static int __net_init lowpan_frags_init_net(struct net *net)
 	ieee802154_lowpan->frags.low_thresh = IPV6_FRAG_LOW_THRESH;
 	ieee802154_lowpan->frags.timeout = IPV6_FRAG_TIMEOUT;
 	ieee802154_lowpan->frags.f = &lowpan_frags;
-	
+
 	res = inet_frags_init_net(&ieee802154_lowpan->frags);
 	if (res < 0)
 		return res;

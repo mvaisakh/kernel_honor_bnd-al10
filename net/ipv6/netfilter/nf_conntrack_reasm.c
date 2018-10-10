@@ -490,6 +490,7 @@ EXPORT_SYMBOL_GPL(nf_ct_frag6_gather);
 static int nf_ct_net_init(struct net *net)
 {
 	int res;
+
 	net->nf_frag.frags.high_thresh = IPV6_FRAG_HIGH_THRESH;
 	net->nf_frag.frags.low_thresh = IPV6_FRAG_LOW_THRESH;
 	net->nf_frag.frags.timeout = IPV6_FRAG_TIMEOUT;
@@ -501,6 +502,7 @@ static int nf_ct_net_init(struct net *net)
 	res = nf_ct_frag6_sysctl_register(net);
 	if (res < 0)
 		inet_frags_exit_net(&net->nf_frag.frags);
+
 	return res;
 }
 
@@ -527,20 +529,13 @@ int nf_ct_frag6_init(void)
 {
 	int ret = 0;
 
-<<<<<<< HEAD
 	nf_frags.constructor = ip6frag_init;
-=======
-	nf_frags.constructor = ip6_frag_init;
->>>>>>> 23ce9c5ce704... inet: frags: use rhashtables for reassembly units
 	nf_frags.destructor = NULL;
 	nf_frags.qsize = sizeof(struct frag_queue);
 	nf_frags.frag_expire = nf_ct_frag6_expire;
 	nf_frags.frags_cache_name = nf_frags_cache_name;
-<<<<<<< HEAD
 	nf_frags.rhash_params = nfct_rhash_params;
-=======
-	nf_frags.rhash_params = ip6_rhash_params;
->>>>>>> 23ce9c5ce704... inet: frags: use rhashtables for reassembly units
+
 	ret = inet_frags_init(&nf_frags);
 	if (ret)
 		goto out;
