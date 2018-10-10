@@ -74,13 +74,8 @@ static u8 ip4_frag_ecn(u8 tos)
 
 static struct inet_frags ip4_frags;
 
-int ip_frag_mem(struct net *net)
-{
-	return sum_frag_mem_limit(&net->ipv4.frags);
-}
-
-static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
-			 struct net_device *dev);
+static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
+			 struct sk_buff *prev_tail, struct net_device *dev);
 
 
 static void ip4_frag_init(struct inet_frag_queue *q, const void *a)
@@ -261,14 +256,7 @@ static int ip_frag_reinit(struct ipq *qp)
 		return -ETIMEDOUT;
 	}
 
-	fp = qp->q.fragments;
-	do {
-		struct sk_buff *xp = fp->next;
-
-		sum_truesize += fp->truesize;
-		kfree_skb(fp);
-		fp = xp;
-	} while (fp);
+	sum_truesize = inet_frag_rbtree_purge(&qp->q.rb_fragments);
 	sub_frag_mem_limit(qp->q.net, sum_truesize);
 
 	qp->q.flags = 0;
@@ -276,6 +264,7 @@ static int ip_frag_reinit(struct ipq *qp)
 	qp->q.meat = 0;
 	qp->q.fragments = NULL;
 	qp->q.fragments_tail = NULL;
+	qp->q.last_run_head = NULL;
 	qp->iif = 0;
 	qp->ecn = 0;
 
@@ -411,8 +400,8 @@ err:
 
 /* Build a new IP datagram from all its fragments. */
 
-static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
-			 struct net_device *dev)
+static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
+			 struct sk_buff *prev_tail, struct net_device *dev)
 {
 	struct net *net = container_of(qp->q.net, struct net, ipv4.frags);
 	struct iphdr *iph;
@@ -467,6 +456,7 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *prev,
 	__IP_INC_STATS(net, IPSTATS_MIB_REASMOKS);
 	qp->q.fragments = NULL;
 	qp->q.fragments_tail = NULL;
+	qp->q.last_run_head = NULL;
 	return 0;
 
 out_nomem:
