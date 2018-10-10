@@ -84,23 +84,22 @@ static void ip6_frag_expire(unsigned long data)
 }
 
 static struct frag_queue *
-fq_find(struct net *net, __be32 id, const struct in6_addr *src,
-	const struct in6_addr *dst, int iif, u8 ecn)
+fq_find(struct net *net, __be32 id, const struct ipv6hdr *hdr, int iif)
 {
+	struct frag_v6_compare_key key = {
+		.id = id,
+		.saddr = hdr->saddr,
+		.daddr = hdr->daddr,
+		.user = IP6_DEFRAG_LOCAL_DELIVER,
+		.iif = iif,
+	};
 	struct inet_frag_queue *q;
-	struct ip6_create_arg arg;
-	unsigned int hash;
 
-	arg.id = id;
-	arg.user = IP6_DEFRAG_LOCAL_DELIVER;
-	arg.src = src;
-	arg.dst = dst;
-	arg.iif = iif;
-	arg.ecn = ecn;
+	if (!(ipv6_addr_type(&hdr->daddr) & (IPV6_ADDR_MULTICAST |
+					    IPV6_ADDR_LINKLOCAL)))
+		key.iif = 0;
 
-	hash = inet6_hash_frag(id, src, dst);
-
-	q = inet_frag_find(&net->ipv6.frags, &ip6_frags, &arg, hash);
+	q = inet_frag_find(&net->ipv6.frags, &key);
 	if (IS_ERR_OR_NULL(q)) {
 		inet_frag_maybe_warn_overflow(q, pr_fmt());
 		return NULL;
@@ -329,6 +328,7 @@ static int ipv6_frag_rcv(struct sk_buff *skb)
 	struct frag_queue *fq;
 	const struct ipv6hdr *hdr = ipv6_hdr(skb);
 	struct net *net = dev_net(skb_dst(skb)->dev);
+	int iif;
 
 	if (IP6CB(skb)->flags & IP6SKB_FRAGMENTED)
 		goto fail_hdr;
@@ -564,9 +564,9 @@ int __init ipv6_frag_init(void)
 	ip6_frags.constructor = ip6frag_init;
 	ip6_frags.destructor = NULL;
 	ip6_frags.qsize = sizeof(struct frag_queue);
-	ip6_frags.match = ip6_frag_match;
 	ip6_frags.frag_expire = ip6_frag_expire;
 	ip6_frags.frags_cache_name = ip6_frag_cache_name;
+	ip6_frags.rhash_params = ip6_rhash_params;
 	ret = inet_frags_init(&ip6_frags);
 	if (ret)
 		goto out;
