@@ -691,7 +691,27 @@ void x86_spec_ctrl_setup_ap(void)
 ssize_t cpu_show_common(struct device *dev, struct device_attribute *attr,
 			char *buf, unsigned int bug)
 {
-	int ret;
+
+	if (l1tf_vmx_mitigation == VMENTER_L1D_FLUSH_AUTO)
+		return sprintf(buf, "%s\n", L1TF_DEFAULT_MSG);
+
+	if (l1tf_vmx_mitigation == VMENTER_L1D_FLUSH_EPT_DISABLED ||
+	    (l1tf_vmx_mitigation == VMENTER_L1D_FLUSH_NEVER &&
+	     sched_smt_active())) {
+		return sprintf(buf, "%s; VMX: %s\n", L1TF_DEFAULT_MSG,
+			       l1tf_vmx_states[l1tf_vmx_mitigation]);
+	}
+
+	return sprintf(buf, "%s; VMX: %s, SMT %s\n", L1TF_DEFAULT_MSG,
+		       l1tf_vmx_states[l1tf_vmx_mitigation],
+		       sched_smt_active() ? "vulnerable" : "disabled");
+}
+#else
+static ssize_t l1tf_show_state(char *buf)
+{
+	return sprintf(buf, "%s\n", L1TF_DEFAULT_MSG);
+}
+#endif
 
 static char *stibp_state(void)
 {
