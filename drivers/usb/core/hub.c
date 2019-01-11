@@ -3224,6 +3224,8 @@ int usb_port_suspend(struct usb_device *udev, pm_message_t msg)
  err_ltm:
 		/* Try to enable USB2 hardware LPM again */
 		usb_enable_usb2_hardware_lpm(udev);
+		if (udev->usb2_hw_lpm_capable == 1)
+			usb_enable_usb2_hardware_lpm(udev);
 
 		if (udev->do_remote_wakeup)
 			(void) usb_disable_remote_wakeup(udev);
@@ -3512,6 +3514,7 @@ int usb_port_resume(struct usb_device *udev, pm_message_t msg)
 	} else  {
 		/* Try to enable USB2 hardware LPM */
 		usb_enable_usb2_hardware_lpm(udev);
+
 
 		/* Try to enable USB3 LTM and LPM */
 		usb_enable_ltm(udev);
@@ -5517,6 +5520,7 @@ static int usb_reset_and_verify_device(struct usb_device *udev)
 	 */
 	usb_disable_usb2_hardware_lpm(udev);
 
+
 	/* Disable LPM and LTM while we reset the device and reinstall the alt
 	 * settings.  Device-initiated LPM settings, and system exit latency
 	 * settings are cleared when the device is reset, so we have to set
@@ -5638,7 +5642,7 @@ re_enumerate:
 	 * make sure usb2_hw_lpm_enabled cleared
 	 */
 	if (udev->usb2_hw_lpm_enabled == 1)
-		usb_set_usb2_hardware_lpm(udev, 0);
+		usb_disable_usb2_hardware_lpm(udev);
 	usb_release_bos_descriptor(udev);
 	udev->bos = bos;
 re_enumerate_no_bos:
