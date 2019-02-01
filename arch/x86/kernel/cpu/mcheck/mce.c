@@ -746,6 +746,8 @@ static int mce_no_way_out(struct mce *m, char **msg, unsigned long *validp,
 		}
 
 		if (mce_severity(m, mca_cfg.tolerant, &tmp, true) >= MCE_PANIC_SEVERITY) {
+			m->bank = i;
+			mce_read_aux(m, i);
 			*msg = tmp;
 			ret = 1;
 		}
