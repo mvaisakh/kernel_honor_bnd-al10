@@ -943,11 +943,41 @@ int arch_prctl_spec_ctrl_get(struct task_struct *task, unsigned long which)
 
 int arch_prctl_spec_ctrl_get(struct task_struct *task, unsigned long which)
 {
-	switch (which) {
-	case PR_SPEC_STORE_BYPASS:
-		return ssb_prctl_get(task);
-	default:
-		return -ENODEV;
+	u64 half_pa;
+
+	if (!boot_cpu_has_bug(X86_BUG_L1TF))
+		return;
+
+	override_cache_bits(&boot_cpu_data);
+
+	switch (l1tf_mitigation) {
+	case L1TF_MITIGATION_OFF:
+	case L1TF_MITIGATION_FLUSH_NOWARN:
+	case L1TF_MITIGATION_FLUSH:
+		break;
+	case L1TF_MITIGATION_FLUSH_NOSMT:
+	case L1TF_MITIGATION_FULL:
+		cpu_smt_disable(false);
+		break;
+	case L1TF_MITIGATION_FULL_FORCE:
+		cpu_smt_disable(true);
+		break;
+	}
+
+#if CONFIG_PGTABLE_LEVELS == 2
+	pr_warn("Kernel not compiled for PAE. No mitigation for L1TF\n");
+	return;
+#endif
+
+	half_pa = (u64)l1tf_pfn_limit() << PAGE_SHIFT;
+	if (l1tf_mitigation != L1TF_MITIGATION_OFF &&
+			e820_any_mapped(half_pa, ULLONG_MAX - half_pa, E820_RAM)) {
+		pr_warn("System has more than MAX_PA/2 memory. L1TF mitigation not effective.\n");
+		pr_info("You may make it effective by booting the kernel with mem=%llu parameter.\n",
+				half_pa);
+		pr_info("However, doing so will make a part of your RAM unusable.\n");
+		pr_info("Reading https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/l1tf.html might help you decide.\n");
+		return;
 	}
 }
 

@@ -19,6 +19,13 @@ Contents:
    gpu/index
    80211/index
 
+This section describes CPU vulnerabilities and their mitigations.
+
+.. toctree::
+   :maxdepth: 1
+
+   hw-vuln/index
+
 Architecture-specific documentation
 -----------------------------------
 
