@@ -1590,7 +1590,7 @@ static void __lo_release(struct loop_device *lo)
 		 */
 		err = loop_clr_fd(lo);
 		if (!err)
-			goto unlock_index;
+			return;
 	} else {
 		/*
 		 * Otherwise keep thread (if running) and config,
