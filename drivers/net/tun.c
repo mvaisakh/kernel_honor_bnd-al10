@@ -1335,6 +1335,14 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	skb_probe_transport_header(skb, 0);
 
 	rxhash = skb_get_hash(skb);
+
+	rcu_read_lock();
+	if (unlikely(!(tun->dev->flags & IFF_UP))) {
+		err = -EIO;
+		rcu_read_unlock();
+		goto drop;
+	}
+
 	netif_rx_ni(skb);
 
 	stats = get_cpu_ptr(tun->pcpu_stats);
