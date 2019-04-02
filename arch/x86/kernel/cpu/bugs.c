@@ -637,6 +637,31 @@ static void update_indir_branch_cond(void)
 		static_branch_disable(&switch_to_cond_stibp);
 }
 
+#undef pr_fmt
+#define pr_fmt(fmt) fmt
+
+/* Update the static key controlling the MDS CPU buffer clear in idle */
+static void update_mds_branch_idle(void)
+{
+	/*
+	 * Enable the idle clearing if SMT is active on CPUs which are
+	 * affected only by MSBDS and not any other MDS variant.
+	 *
+	 * The other variants cannot be mitigated when SMT is enabled, so
+	 * clearing the buffers on idle just to prevent the Store Buffer
+	 * repartitioning leak would be a window dressing exercise.
+	 */
+	if (!boot_cpu_has_bug(X86_BUG_MSBDS_ONLY))
+		return;
+
+	if (sched_smt_active())
+		static_branch_enable(&mds_idle_clear);
+	else
+		static_branch_disable(&mds_idle_clear);
+}
+
+#define MDS_MSG_SMT "MDS CPU bug present and SMT on, data leak possible. See https://www.kernel.org/doc/html/latest/admin-guide/hw-vuln/mds.html for more details.\n"
+
 void arch_smt_update(void)
 {
 	/* Enhanced IBRS implies STIBP. No update required. */
@@ -660,6 +685,8 @@ void arch_smt_update(void)
 	switch (mds_mitigation) {
 	case MDS_MITIGATION_FULL:
 	case MDS_MITIGATION_VMWERV:
+		if (sched_smt_active() && !boot_cpu_has(X86_BUG_MSBDS_ONLY))
+			pr_warn_once(MDS_MSG_SMT);
 		update_mds_branch_idle();
 		break;
 	case MDS_MITIGATION_OFF:
@@ -999,6 +1026,10 @@ void x86_spec_ctrl_setup_ap(void)
 	if (ssb_mode == SPEC_STORE_BYPASS_DISABLE)
 		x86_amd_rds_enable();
 }
+early_param("l1tf", l1tf_cmdline);
+
+#undef pr_fmt
+#define pr_fmt(fmt) fmt
 
 #ifdef CONFIG_SYSFS
 
