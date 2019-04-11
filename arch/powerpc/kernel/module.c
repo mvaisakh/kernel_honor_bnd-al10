@@ -72,6 +72,7 @@ int module_finalize(const Elf_Ehdr *hdr,
 		do_feature_fixups(powerpc_firmware_features,
 				  (void *)sect->sh_addr,
 				  (void *)sect->sh_addr + sect->sh_size);
+<<<<<<< HEAD
 #endif /* CONFIG_PPC64 */
 
 #ifdef CONFIG_PPC_BARRIER_NOSPEC
