@@ -56,6 +56,7 @@ static int __init handle_nospectre_v1(char *p)
 }
 early_param("nospectre_v1", handle_nospectre_v1);
 
+
 #ifdef CONFIG_DEBUG_FS
 static int barrier_nospec_set(void *data, u64 val)
 {
