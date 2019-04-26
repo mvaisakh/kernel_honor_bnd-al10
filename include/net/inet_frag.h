@@ -46,7 +46,8 @@ struct inet_frag_queue {
 	struct timer_list	timer;
 	struct hlist_node	list;
 	atomic_t		refcnt;
-	struct sk_buff		*fragments;
+	struct sk_buff		*fragments;  /* used in 6lopwpan IPv6. */
+	struct rb_root		rb_fragments; /* Used in IPv4/IPv6. */
 	struct sk_buff		*fragments_tail;
 	ktime_t			stamp;
 	int			len;
@@ -160,5 +161,17 @@ static inline int sum_frag_mem_limit(struct netns_frags *nf)
 #define	IPFRAG_ECN_CE		0x08 /* one frag had ECN_CE */
 
 extern const u8 ip_frag_ecn_table[16];
+
+/* Return values of inet_frag_queue_insert() */
+#define IPFRAG_OK	0
+#define IPFRAG_DUP	1
+#define IPFRAG_OVERLAP	2
+int inet_frag_queue_insert(struct inet_frag_queue *q, struct sk_buff *skb,
+			   int offset, int end);
+void *inet_frag_reasm_prepare(struct inet_frag_queue *q, struct sk_buff *skb,
+			      struct sk_buff *parent);
+void inet_frag_reasm_finish(struct inet_frag_queue *q, struct sk_buff *head,
+			    void *reasm_data);
+struct sk_buff *inet_frag_pull_head(struct inet_frag_queue *q);
 
 #endif
