@@ -57,7 +57,7 @@
 #include <net/rawv6.h>
 #include <net/ndisc.h>
 #include <net/addrconf.h>
-#include <net/inet_frag.h>
+#include <net/ipv6_frag.h>
 #include <net/inet_ecn.h>
 
 static const char ip6_frag_cache_name[] = "ip6-frags";
@@ -79,96 +79,6 @@ static struct inet_frags ip6_frags;
 static int ip6_frag_reasm(struct frag_queue *fq, struct sk_buff *prev,
 			  struct net_device *dev);
 
-/*
- * callers should be careful not to use the hash value outside the ipfrag_lock
- * as doing so could race with ipfrag_hash_rnd being recalculated.
- */
-static unsigned int inet6_hash_frag(__be32 id, const struct in6_addr *saddr,
-				    const struct in6_addr *daddr)
-{
-	net_get_random_once(&ip6_frags.rnd, sizeof(ip6_frags.rnd));
-	return jhash_3words(ipv6_addr_hash(saddr), ipv6_addr_hash(daddr),
-			    (__force u32)id, ip6_frags.rnd);
-}
-
-static unsigned int ip6_hashfn(const struct inet_frag_queue *q)
-{
-	const struct frag_queue *fq;
-
-	fq = container_of(q, struct frag_queue, q);
-	return inet6_hash_frag(fq->id, &fq->saddr, &fq->daddr);
-}
-
-bool ip6_frag_match(const struct inet_frag_queue *q, const void *a)
-{
-	const struct frag_queue *fq;
-	const struct ip6_create_arg *arg = a;
-
-	fq = container_of(q, struct frag_queue, q);
-	return	fq->id == arg->id &&
-		fq->user == arg->user &&
-		ipv6_addr_equal(&fq->saddr, arg->src) &&
-		ipv6_addr_equal(&fq->daddr, arg->dst) &&
-		(arg->iif == fq->iif ||
-		 !(ipv6_addr_type(arg->dst) & (IPV6_ADDR_MULTICAST |
-					       IPV6_ADDR_LINKLOCAL)));
-}
-EXPORT_SYMBOL(ip6_frag_match);
-
-void ip6_frag_init(struct inet_frag_queue *q, const void *a)
-{
-	struct frag_queue *fq = container_of(q, struct frag_queue, q);
-	const struct ip6_create_arg *arg = a;
-
-	fq->id = arg->id;
-	fq->user = arg->user;
-	fq->saddr = *arg->src;
-	fq->daddr = *arg->dst;
-	fq->ecn = arg->ecn;
-}
-EXPORT_SYMBOL(ip6_frag_init);
-
-void ip6_expire_frag_queue(struct net *net, struct frag_queue *fq,
-			   struct inet_frags *frags)
-{
-	struct net_device *dev = NULL;
-
-	spin_lock(&fq->q.lock);
-
-	if (fq->q.flags & INET_FRAG_COMPLETE)
-		goto out;
-
-	inet_frag_kill(&fq->q, frags);
-
-	rcu_read_lock();
-	dev = dev_get_by_index_rcu(net, fq->iif);
-	if (!dev)
-		goto out_rcu_unlock;
-
-	__IP6_INC_STATS(net, __in6_dev_get(dev), IPSTATS_MIB_REASMFAILS);
-
-	if (inet_frag_evicting(&fq->q))
-		goto out_rcu_unlock;
-
-	__IP6_INC_STATS(net, __in6_dev_get(dev), IPSTATS_MIB_REASMTIMEOUT);
-
-	/* Don't send error if the first segment did not arrive. */
-	if (!(fq->q.flags & INET_FRAG_FIRST_IN) || !fq->q.fragments)
-		goto out_rcu_unlock;
-
-	/* But use as source device on which LAST ARRIVED
-	 * segment was received. And do not use fq->dev
-	 * pointer directly, device might already disappeared.
-	 */
-	fq->q.fragments->dev = dev;
-	icmpv6_send(fq->q.fragments, ICMPV6_TIME_EXCEED, ICMPV6_EXC_FRAGTIME, 0);
-out_rcu_unlock:
-	rcu_read_unlock();
-out:
-	spin_unlock(&fq->q.lock);
-	inet_frag_put(&fq->q, frags);
-}
-EXPORT_SYMBOL(ip6_expire_frag_queue);
 
 static void ip6_frag_expire(unsigned long data)
 {
@@ -178,7 +88,7 @@ static void ip6_frag_expire(unsigned long data)
 	fq = container_of((struct inet_frag_queue *)data, struct frag_queue, q);
 	net = container_of(fq->q.net, struct net, ipv6.frags);
 
-	ip6_expire_frag_queue(net, fq, &ip6_frags);
+	ip6frag_expire_frag_queue(net, fq);
 }
 
 static struct frag_queue *
@@ -731,12 +641,20 @@ static struct pernet_operations ip6_frags_ops = {
 	.exit = ipv6_frags_exit_net,
 };
 
+
+static const struct rhashtable_params ip6_rhash_params = {
+	.head_offset		= offsetof(struct inet_frag_queue, node),
+	.hashfn			= ip6frag_key_hashfn,
+	.obj_hashfn		= ip6frag_obj_hashfn,
+	.obj_cmpfn		= ip6frag_obj_cmpfn,
+	.automatic_shrinking	= true,
+};
+
 int __init ipv6_frag_init(void)
 {
 	int ret;
 
-	ip6_frags.hashfn = ip6_hashfn;
-	ip6_frags.constructor = ip6_frag_init;
+	ip6_frags.constructor = ip6frag_init;
 	ip6_frags.destructor = NULL;
 	ip6_frags.qsize = sizeof(struct frag_queue);
 	ip6_frags.match = ip6_frag_match;
