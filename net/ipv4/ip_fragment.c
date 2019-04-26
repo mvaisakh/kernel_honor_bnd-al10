@@ -428,10 +428,9 @@ static int ip_frag_reasm(struct ipq *qp, struct sk_buff *skb,
 		goto out_oversize;
 
 	inet_frag_reasm_finish(&qp->q, skb, reasm_data);
-
 	skb->dev = dev;
 	IPCB(skb)->frag_max_size = max(qp->max_df_size, qp->q.max_size);
-
+	
 	iph = ip_hdr(skb);
 	iph->tot_len = htons(len);
 	iph->tos |= ecn;
