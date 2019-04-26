@@ -210,27 +210,9 @@ static void ip_expire(unsigned long arg)
 	 * pull the head out of the tree in order to be able to
 	 * deal with head->dev.
 	 */
-	if (qp->q.fragments) {
-		head = qp->q.fragments;
-		qp->q.fragments = head->next;
-	} else {
-		head = skb_rb_first(&qp->q.rb_fragments);
-		if (!head)
-			goto out;
-		if (FRAG_CB(head)->next_frag)
-			rb_replace_node(&head->rbnode,
-					&FRAG_CB(head)->next_frag->rbnode,
-					&qp->q.rb_fragments);
-		else
-			rb_erase(&head->rbnode, &qp->q.rb_fragments);
-		memset(&head->rbnode, 0, sizeof(head->rbnode));
-		barrier();
-	}
-	if (head == qp->q.fragments_tail)
-		qp->q.fragments_tail = NULL;
-
-	sub_frag_mem_limit(qp->q.net, head->truesize);
-
+	head = inet_frag_pull_head(&qp->q);
+	if (!head)
+		goto out;
 	head->dev = dev_get_by_index_rcu(net, qp->iif);
 	if (!head->dev)
 		goto out;
