@@ -621,6 +621,27 @@ EXPORT_SYMBOL_GPL(cpuidle_register);
 
 #ifdef CONFIG_SMP
 
+static void wake_up_idle_cpus(unsigned long l, void *v)
+{
+	static unsigned long prev_latency = ULONG_MAX;
+	struct cpumask cpus;
+	int cpu;
+
+	if (l < prev_latency) {
+		cpumask_andnot(&cpus, cpu_online_mask, cpu_isolated_mask);
+		preempt_disable();
+		for_each_cpu(cpu, &cpus) {
+			if (cpu == smp_processor_id())
+				continue;
+			wake_up_if_idle(cpu);
+		}
+		preempt_enable();
+	}
+
+	prev_latency = l;
+
+}
+
 /*
  * This function gets called when a part of the kernel has a new latency
  * requirement.  This means we need to get all processors out of their C-state,
@@ -630,7 +651,7 @@ EXPORT_SYMBOL_GPL(cpuidle_register);
 static int cpuidle_latency_notify(struct notifier_block *b,
 		unsigned long l, void *v)
 {
-	wake_up_all_idle_cpus();
+	wake_up_idle_cpus(l, v);
 	return NOTIFY_OK;
 }
 
