@@ -1021,8 +1021,14 @@ static int validate_branch(struct objtool_file *file,
 			return 0;
 		}
 
-		insn->visited = true;
-		insn->state = state;
+		if (insn->func)
+			func = insn->func->pfunc;
+
+		if (func && insn->ignore) {
+			WARN_FUNC("BUG: why am I validating an ignored function?",
+				  sec, insn->offset);
+			return 1;
+		}
 
 		list_for_each_entry(alt, &insn->alts, list) {
 			ret = validate_branch(file, alt->insn, state);
