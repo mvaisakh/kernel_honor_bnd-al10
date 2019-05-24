@@ -1055,6 +1055,10 @@ EXPORT_SYMBOL_GPL(kvm_valid_efer);
 static int set_efer(struct kvm_vcpu *vcpu, u64 efer)
 {
 	u64 old_efer = vcpu->arch.efer;
+	u64 efer = msr_info->data;
+
+	if (efer & efer_reserved_bits)
+		return 1;
 
 	if (!kvm_valid_efer(vcpu, efer))
 		return 1;
