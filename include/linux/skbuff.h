@@ -654,8 +654,19 @@ struct sk_buff {
 	 * want to keep them across layers you have to do a skb_clone()
 	 * first. This is owned by whoever has the skb queued ATM.
 	 */
+#ifdef CONFIG_MPTCP
+#ifdef CONFIG_WIFI_DELAY_STATISTIC
+	char			cb[128] __aligned(8);
+#else
+	char			cb[80] __aligned(8);
+#endif
+#else
+#ifdef CONFIG_WIFI_DELAY_STATISTIC
+	char			cb[96] __aligned(8);
+#else
 	char			cb[48] __aligned(8);
-
+#endif
+#endif
 	unsigned long		_skb_refdst;
 	void			(*destructor)(struct sk_buff *skb);
 #ifdef CONFIG_XFRM

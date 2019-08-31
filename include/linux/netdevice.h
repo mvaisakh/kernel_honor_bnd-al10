@@ -619,6 +619,9 @@ static inline void netdev_queue_numa_node_write(struct netdev_queue *q, int node
 struct rps_map {
 	unsigned int len;
 	struct rcu_head rcu;
+#ifdef CONFIG_HISI_RFS_RPS_MATCH
+	struct cpumask cpus_mask;
+#endif
 	u16 cpus[0];
 };
 #define RPS_MAP_SIZE(_num) (sizeof(struct rps_map) + ((_num) * sizeof(u16)))
@@ -2336,6 +2339,13 @@ int unregister_netdevice_notifier(struct notifier_block *nb);
 
 struct netdev_notifier_info {
 	struct net_device *dev;
+};
+
+struct netdev_notifier_info_ext {
+	struct netdev_notifier_info info; /* must be first */
+	union {
+		u32 mtu;
+	} ext;
 };
 
 struct netdev_notifier_change_info {

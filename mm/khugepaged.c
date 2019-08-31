@@ -528,12 +528,7 @@ static int __collapse_huge_page_isolate(struct vm_area_struct *vma,
 			goto out;
 		}
 
-		/* TODO: teach khugepaged to collapse THP mapped with pte */
-		if (PageCompound(page)) {
-			result = SCAN_PAGE_COMPOUND;
-			goto out;
-		}
-
+		VM_BUG_ON_PAGE(PageCompound(page), page);
 		VM_BUG_ON_PAGE(!PageAnon(page), page);
 		VM_BUG_ON_PAGE(!PageSwapBacked(page), page);
 
@@ -887,6 +882,10 @@ static bool __collapse_huge_page_swapin(struct mm_struct *mm,
 		.address = address,
 		.flags = FAULT_FLAG_ALLOW_RETRY,
 		.pmd = pmd,
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+		.vma_flags = vma->vm_flags,
+		.vma_page_prot = vma->vm_page_prot,
+#endif
 	};
 
 	/* we only decide to swapin, if there is enough young ptes */
@@ -963,9 +962,7 @@ static void collapse_huge_page(struct mm_struct *mm,
 		goto out_nolock;
 	}
 
-	/* Do not oom kill for khugepaged charges */
-	if (unlikely(mem_cgroup_try_charge(new_page, mm, gfp | __GFP_NORETRY,
-					   &memcg, true))) {
+	if (unlikely(mem_cgroup_try_charge(new_page, mm, gfp, &memcg, true))) {
 		result = SCAN_CGROUP_CHARGE_FAIL;
 		goto out_nolock;
 	}
@@ -1011,6 +1008,9 @@ static void collapse_huge_page(struct mm_struct *mm,
 	if (mm_find_pmd(mm, address) != pmd)
 		goto out;
 
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+	vm_write_begin(vma);
+#endif
 	anon_vma_lock_write(vma->anon_vma);
 
 	pte = pte_offset_map(pmd, address);
@@ -1046,6 +1046,9 @@ static void collapse_huge_page(struct mm_struct *mm,
 		pmd_populate(mm, pmd, pmd_pgtable(_pmd));
 		spin_unlock(pmd_ptl);
 		anon_vma_unlock_write(vma->anon_vma);
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+		vm_write_end(vma);
+#endif
 		result = SCAN_FAIL;
 		goto out;
 	}
@@ -1080,7 +1083,9 @@ static void collapse_huge_page(struct mm_struct *mm,
 	set_pmd_at(mm, address, pmd, _pmd);
 	update_mmu_cache_pmd(vma, address, pmd);
 	spin_unlock(pmd_ptl);
-
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+	vm_write_end(vma);
+#endif
 	*hpage = NULL;
 
 	khugepaged_pages_collapsed++;
@@ -1325,9 +1330,7 @@ static void collapse_shmem(struct mm_struct *mm,
 		goto out;
 	}
 
-	/* Do not oom kill for khugepaged charges */
-	if (unlikely(mem_cgroup_try_charge(new_page, mm, gfp | __GFP_NORETRY,
-					   &memcg, true))) {
+	if (unlikely(mem_cgroup_try_charge(new_page, mm, gfp, &memcg, true))) {
 		result = SCAN_CGROUP_CHARGE_FAIL;
 		goto out;
 	}
@@ -1682,14 +1685,10 @@ static unsigned int khugepaged_scan_mm_slot(unsigned int pages,
 	spin_unlock(&khugepaged_mm_lock);
 
 	mm = mm_slot->mm;
-	/*
-	 * Don't wait for semaphore (to avoid long wait times).  Just move to
-	 * the next mm on the list.
-	 */
-	vma = NULL;
-	if (unlikely(!down_read_trylock(&mm->mmap_sem)))
-		goto breakouterloop_mmap_sem;
-	if (likely(!khugepaged_test_exit(mm)))
+	down_read(&mm->mmap_sem);
+	if (unlikely(khugepaged_test_exit(mm)))
+		vma = NULL;
+	else
 		vma = find_vma(mm, khugepaged_scan.address);
 
 	progress++;

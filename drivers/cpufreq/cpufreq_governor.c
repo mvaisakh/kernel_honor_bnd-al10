@@ -22,6 +22,7 @@
 #include <linux/slab.h>
 
 #include "cpufreq_governor.h"
+#include <linux/hisi/hifreq_hotplug.h>
 
 static DEFINE_PER_CPU(struct cpu_dbs_info, cpu_dbs);
 
@@ -218,6 +219,9 @@ unsigned int dbs_update(struct cpufreq_policy *policy)
 		if (load > max_load)
 			max_load = load;
 	}
+#ifdef CONFIG_HISI_BIG_MAXFREQ_HOTPLUG
+	set_bL_hifreq_load(max_load);
+#endif
 	return max_load;
 }
 EXPORT_SYMBOL_GPL(dbs_update);

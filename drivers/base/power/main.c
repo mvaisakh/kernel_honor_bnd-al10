@@ -35,6 +35,10 @@
 #include <linux/timer.h>
 #include <linux/wakeup_reason.h>
 
+#if defined CONFIG_LOG_JANK
+#include <huawei_platform/log/log_jank.h>
+#endif
+
 #include "../base.h"
 #include "power.h"
 
@@ -374,6 +378,13 @@ static void dpm_show_time(ktime_t starttime, pm_message_t state, char *info)
 	pr_info("PM: %s%s%s of devices complete after %ld.%03ld msecs\n",
 		info ?: "", info ? " " : "", pm_verb(state.event),
 		usecs / USEC_PER_MSEC, usecs % USEC_PER_MSEC);
+#if defined CONFIG_LOG_JANK
+	if (PM_EVENT_RESUME == state.event)
+		LOG_JANK_D(JLID_KERNEL_PM_DEEPSLEEP_WAKEUP,
+			"%s: %ld.%03ld msecs",
+			"JL_KERNEL_PM_DEEPSLEEP_WAKEUP",
+			usecs / USEC_PER_MSEC, usecs % USEC_PER_MSEC);
+#endif
 }
 
 static int dpm_run_callback(pm_callback_t cb, struct device *dev,
@@ -1362,8 +1373,10 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 
 	dpm_wait_for_children(dev, async);
 
-	if (async_error)
+	if (async_error) {
+		dev->power.direct_complete = false;
 		goto Complete;
+	}
 
 	/*
 	 * If a device configured to wake up the system from sleep states
@@ -1378,6 +1391,7 @@ static int __device_suspend(struct device *dev, pm_message_t state, bool async)
 		pm_get_active_wakeup_sources(suspend_abort,
 			MAX_SUSPEND_ABORT_LEN);
 		log_suspend_abort_reason(suspend_abort);
+		dev->power.direct_complete = false;
 		async_error = -EBUSY;
 		goto Complete;
 	}

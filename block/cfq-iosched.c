@@ -2951,7 +2951,8 @@ static void cfq_arm_slice_timer(struct cfq_data *cfqd)
 	 * for devices that support queuing, otherwise we still have a problem
 	 * with sync vs async workloads.
 	 */
-	if (blk_queue_nonrot(cfqd->queue) && cfqd->hw_tag)
+	if (blk_queue_nonrot(cfqd->queue) && cfqd->hw_tag &&
+		!cfqd->cfq_group_idle)
 		return;
 
 	WARN_ON(!RB_EMPTY_ROOT(&cfqq->sort_list));
@@ -3797,6 +3798,18 @@ static void check_blkcg_changed(struct cfq_io_cq *cic, struct bio *bio)
 		return;
 
 	/*
+	 * If we have a non-root cgroup, we can depend on that to
+	 * do proper throttling of writes. Turn off wbt for that
+	 * case.
+	 */
+	if (bio_blkcg(bio) != &blkcg_root) {
+		struct request_queue *q = cfqd->queue;
+
+		if (q->rq_wb)
+			wbt_disable(q->rq_wb);
+	}
+
+	/*
 	 * Drop reference to queues.  New queues will be assigned in new
 	 * group upon arrival of fresh requests.
 	 */
@@ -3867,7 +3880,8 @@ cfq_get_queue(struct cfq_data *cfqd, bool is_sync, struct cfq_io_cq *cic,
 			goto out;
 	}
 
-	cfqq = kmem_cache_alloc_node(cfq_pool, GFP_NOWAIT | __GFP_ZERO,
+	cfqq = kmem_cache_alloc_node(cfq_pool,
+				     GFP_NOWAIT | __GFP_ZERO | __GFP_NOWARN,
 				     cfqd->queue->node);
 	if (!cfqq) {
 		cfqq = &cfqd->oom_cfqq;

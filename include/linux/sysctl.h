@@ -117,7 +117,7 @@ struct ctl_table
 	struct ctl_table_poll *poll;
 	void *extra1;
 	void *extra2;
-};
+} __randomize_layout;
 
 struct ctl_node {
 	struct rb_node node;
@@ -143,6 +143,7 @@ struct ctl_table_header
 	struct ctl_table_set *set;
 	struct ctl_dir *parent;
 	struct ctl_node *node;
+	struct hlist_head inodes; /* head for proc_inode->sysctl_inodes */
 };
 
 struct ctl_dir {

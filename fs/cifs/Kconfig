@@ -111,7 +111,7 @@ config CIFS_XATTR
 
 config CIFS_POSIX
         bool "CIFS POSIX Extensions"
-        depends on CIFS_XATTR
+        depends on CIFS && CIFS_ALLOW_INSECURE_LEGACY && CIFS_XATTR
         help
           Enabling this option will cause the cifs client to attempt to
 	  negotiate a newer dialect with servers, such as Samba 3.0.5
@@ -209,3 +209,9 @@ config CIFS_FSCACHE
 	    to be cached locally on disk through the general filesystem cache
 	    manager. If unsure, say N.
 
+config CIFS_DEFAULT
+	string "Default CIFS iocharset Option"
+	depends on CIFS
+	default "utf8"
+	help
+	  default iocharset for cifs.

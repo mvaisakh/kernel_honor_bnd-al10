@@ -542,8 +542,7 @@ static int __do_huge_pmd_anonymous_page(struct fault_env *fe, struct page *page,
 
 	VM_BUG_ON_PAGE(!PageCompound(page), page);
 
-	if (mem_cgroup_try_charge(page, vma->vm_mm, gfp | __GFP_NORETRY, &memcg,
-				  true)) {
+	if (mem_cgroup_try_charge(page, vma->vm_mm, gfp, &memcg, true)) {
 		put_page(page);
 		count_vm_event(THP_FAULT_FALLBACK);
 		return VM_FAULT_FALLBACK;
@@ -958,8 +957,13 @@ static int do_huge_pmd_wp_page_fallback(struct fault_env *fe, pmd_t orig_pmd,
 
 	for (i = 0; i < HPAGE_PMD_NR; i++, haddr += PAGE_SIZE) {
 		pte_t entry;
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+		entry = mk_pte(pages[i], fe->vma_page_prot);
+		entry = maybe_mkwrite(pte_mkdirty(entry), fe->vma_flags);
+#else
 		entry = mk_pte(pages[i], vma->vm_page_prot);
 		entry = maybe_mkwrite(pte_mkdirty(entry), vma);
+#endif
 		memcg = (void *)page_private(pages[i]);
 		set_page_private(pages[i], 0);
 		page_add_new_anon_rmap(pages[i], fe->vma, haddr, false);
@@ -1061,7 +1065,7 @@ alloc:
 	}
 
 	if (unlikely(mem_cgroup_try_charge(new_page, vma->vm_mm,
-				huge_gfp | __GFP_NORETRY, &memcg, true))) {
+					huge_gfp, &memcg, true))) {
 		put_page(new_page);
 		split_huge_pmd(vma, fe->pmd, fe->address);
 		if (page)
@@ -1640,8 +1644,6 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 		if (vma_is_dax(vma))
 			return;
 		page = pmd_page(_pmd);
-		if (!PageDirty(page) && pmd_dirty(_pmd))
-			set_page_dirty(page);
 		if (!PageReferenced(page) && pmd_young(_pmd))
 			SetPageReferenced(page);
 		page_remove_rmap(page, true);
@@ -1679,7 +1681,11 @@ static void __split_huge_pmd_locked(struct vm_area_struct *vma, pmd_t *pmd,
 				entry = pte_swp_mksoft_dirty(entry);
 		} else {
 			entry = mk_pte(page + i, READ_ONCE(vma->vm_page_prot));
+#ifdef CONFIG_SPECULATIVE_PAGE_FAULT
+			entry = maybe_mkwrite(entry, vma->vm_flags);
+#else
 			entry = maybe_mkwrite(entry, vma);
+#endif
 			if (!write)
 				entry = pte_wrprotect(entry);
 			if (!young)
@@ -2280,13 +2286,11 @@ static unsigned long deferred_split_scan(struct shrinker *shrink,
 
 	list_for_each_safe(pos, next, &list) {
 		page = list_entry((void *)pos, struct page, mapping);
-		if (!trylock_page(page))
-			goto next;
+		lock_page(page);
 		/* split_huge_page() removes page from list on success */
 		if (!split_huge_page(page))
 			split++;
 		unlock_page(page);
-next:
 		put_page(page);
 	}
 

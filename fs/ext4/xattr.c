@@ -184,6 +184,8 @@ ext4_xattr_check_names(struct ext4_xattr_entry *entry, void *end,
 		struct ext4_xattr_entry *next = EXT4_XATTR_NEXT(e);
 		if ((void *)next >= end)
 			return -EFSCORRUPTED;
+		if (strnlen(e->e_name, e->e_name_len) != e->e_name_len)
+			return -EFSCORRUPTED;
 		e = next;
 	}
 
@@ -210,6 +212,7 @@ ext4_xattr_check_block(struct inode *inode, struct buffer_head *bh)
 	if (BHDR(bh)->h_magic != cpu_to_le32(EXT4_XATTR_MAGIC) ||
 	    BHDR(bh)->h_blocks != cpu_to_le32(1))
 		return -EFSCORRUPTED;
+
 	if (buffer_verified(bh))
 		return 0;
 
@@ -655,7 +658,7 @@ ext4_xattr_set_entry(struct ext4_xattr_info *i, struct ext4_xattr_search *s,
 		next = EXT4_XATTR_NEXT(last);
 		if ((void *)next >= s->end) {
 			EXT4_ERROR_INODE(inode, "corrupted xattr entries");
-			return -EIO;
+			return -EFSCORRUPTED;
 		}
 		if (last->e_value_size) {
 			size_t offs = le16_to_cpu(last->e_value_offs);
@@ -1219,6 +1222,8 @@ ext4_xattr_set_handle(handle_t *handle, struct inode *inode, int name_index,
 			error = ext4_xattr_block_set(handle, inode, &i, &bs);
 		} else if (error == -ENOSPC) {
 			if (EXT4_I(inode)->i_file_acl && !bs.s.base) {
+				brelse(bs.bh);
+				bs.bh = NULL;
 				error = ext4_xattr_block_find(inode, &i, &bs);
 				if (error)
 					goto cleanup;
@@ -1389,6 +1394,8 @@ out:
 	kfree(buffer);
 	if (is)
 		brelse(is->iloc.bh);
+	if (bs)
+		brelse(bs->bh);
 	kfree(is);
 	kfree(bs);
 
@@ -1421,6 +1428,7 @@ static int ext4_xattr_make_inode_space(handle_t *handle, struct inode *inode,
 			    (last->e_name_index == EXT4_XATTR_INDEX_SYSTEM) &&
 			    !memcmp(last->e_name, "data", 4))
 				continue;
+
 			total_size =
 			EXT4_XATTR_SIZE(le32_to_cpu(last->e_value_size)) +
 					EXT4_XATTR_LEN(last->e_name_len);

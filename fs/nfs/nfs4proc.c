@@ -1934,7 +1934,7 @@ static int nfs4_open_reclaim(struct nfs4_state_owner *sp, struct nfs4_state *sta
 	return ret;
 }
 
-static int nfs4_handle_delegation_recall_error(struct nfs_server *server, struct nfs4_state *state, const nfs4_stateid *stateid, struct file_lock *fl, int err)
+static int nfs4_handle_delegation_recall_error(struct nfs_server *server, struct nfs4_state *state, const nfs4_stateid *stateid, int err)
 {
 	switch (err) {
 		default:
@@ -1981,11 +1981,7 @@ static int nfs4_handle_delegation_recall_error(struct nfs_server *server, struct
 			return -EAGAIN;
 		case -ENOMEM:
 		case -NFS4ERR_DENIED:
-			if (fl) {
-				struct nfs4_lock_state *lsp = fl->fl_u.nfs4_fl.owner;
-				if (lsp)
-					set_bit(NFS_LOCK_LOST, &lsp->ls_flags);
-			}
+			/* kill_proc(fl->fl_pid, SIGLOST, 1); */
 			return 0;
 	}
 	return err;
@@ -2021,7 +2017,7 @@ int nfs4_open_delegation_recall(struct nfs_open_context *ctx,
 		err = nfs4_open_recover_helper(opendata, FMODE_READ);
 	}
 	nfs4_opendata_put(opendata);
-	return nfs4_handle_delegation_recall_error(server, state, stateid, NULL, err);
+	return nfs4_handle_delegation_recall_error(server, state, stateid, err);
 }
 
 static void nfs4_open_confirm_prepare(struct rpc_task *task, void *calldata)
@@ -2701,7 +2697,7 @@ static int _nfs4_open_and_get_state(struct nfs4_opendata *opendata,
 	if (ret != 0)
 		goto out;
 
-	state = _nfs4_opendata_to_nfs4_state(opendata);
+	state = nfs4_opendata_to_nfs4_state(opendata);
 	ret = PTR_ERR(state);
 	if (IS_ERR(state))
 		goto out;
@@ -2737,7 +2733,6 @@ static int _nfs4_open_and_get_state(struct nfs4_opendata *opendata,
 			nfs4_schedule_stateid_recovery(server, state);
 	}
 out:
-	nfs4_sequence_free_slot(&opendata->o_res.seq_res);
 	return ret;
 }
 
@@ -3305,7 +3300,6 @@ static int _nfs4_server_capabilities(struct nfs_server *server, struct nfs_fh *f
 		.rpc_resp = &res,
 	};
 	int status;
-	int i;
 
 	bitmask[0] = FATTR4_WORD0_SUPPORTED_ATTRS |
 		     FATTR4_WORD0_FH_EXPIRE_TYPE |
@@ -3371,13 +3365,8 @@ static int _nfs4_server_capabilities(struct nfs_server *server, struct nfs_fh *f
 		server->cache_consistency_bitmask[0] &= FATTR4_WORD0_CHANGE|FATTR4_WORD0_SIZE;
 		server->cache_consistency_bitmask[1] &= FATTR4_WORD1_TIME_METADATA|FATTR4_WORD1_TIME_MODIFY;
 		server->cache_consistency_bitmask[2] = 0;
-
-		/* Avoid a regression due to buggy server */
-		for (i = 0; i < ARRAY_SIZE(res.exclcreat_bitmask); i++)
-			res.exclcreat_bitmask[i] &= res.attr_bitmask[i];
 		memcpy(server->exclcreat_bitmask, res.exclcreat_bitmask,
 			sizeof(server->exclcreat_bitmask));
-
 		server->acl_bitmask = res.acl_bitmask;
 		server->fh_expire_type = res.fh_expire_type;
 	}
@@ -6504,7 +6493,7 @@ int nfs4_lock_delegation_recall(struct file_lock *fl, struct nfs4_state *state, 
 	if (err != 0)
 		return err;
 	err = _nfs4_do_setlk(state, F_SETLK, fl, NFS_LOCK_NEW);
-	return nfs4_handle_delegation_recall_error(server, state, stateid, fl, err);
+	return nfs4_handle_delegation_recall_error(server, state, stateid, err);
 }
 
 struct nfs_release_lockowner_data {
@@ -8184,12 +8173,6 @@ static int nfs41_reclaim_complete_handle_errors(struct rpc_task *task, struct nf
 		/* fall through */
 	case -NFS4ERR_RETRY_UNCACHED_REP:
 		return -EAGAIN;
-	case -NFS4ERR_BADSESSION:
-	case -NFS4ERR_DEADSESSION:
-	case -NFS4ERR_CONN_NOT_BOUND_TO_SESSION:
-		nfs4_schedule_session_recovery(clp->cl_session,
-				task->tk_status);
-		break;
 	default:
 		nfs4_schedule_lease_recovery(clp);
 	}
@@ -8268,6 +8251,7 @@ static int nfs41_proc_reclaim_complete(struct nfs_client *clp,
 	if (status == 0)
 		status = task->tk_status;
 	rpc_put_task(task);
+	return 0;
 out:
 	dprintk("<-- %s status=%d\n", __func__, status);
 	return status;

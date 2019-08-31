@@ -1112,6 +1112,10 @@ static void tun_net_init(struct net_device *dev)
 
 		break;
 	}
+#ifdef CONFIG_MPTCP
+	if (dev)
+		dev->flags |= IFF_NOMULTIPATH;
+#endif
 }
 
 /* Character device part */
@@ -1284,6 +1288,10 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		kfree_skb(skb);
 		return -EINVAL;
 	}
+
+	if (!(tun->flags & IFF_NO_PI))
+		if (pi.flags & htons(CHECKSUM_UNNECESSARY))
+			skb->ip_summed = CHECKSUM_UNNECESSARY;
 
 	switch (tun->flags & TUN_TYPE_MASK) {
 	case IFF_TUN:
@@ -1570,7 +1578,9 @@ static void tun_setup(struct net_device *dev)
  */
 static int tun_validate(struct nlattr *tb[], struct nlattr *data[])
 {
-	return -EINVAL;
+	/* NL_SET_ERR_MSG(extack,
+		       "tun/tap creation via rtnetlink is not supported."); */
+	return -EOPNOTSUPP;
 }
 
 static struct rtnl_link_ops tun_link_ops __read_mostly = {

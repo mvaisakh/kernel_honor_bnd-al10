@@ -1,6 +1,6 @@
 VERSION = 4
 PATCHLEVEL = 9
-SUBLEVEL = 118
+SUBLEVEL = 148
 EXTRAVERSION =
 NAME = Roaring Lionus
 
@@ -23,6 +23,9 @@ export LC_COLLATE LC_NUMERIC
 
 # Avoid interference with shell env settings
 unexport GREP_OPTIONS
+TARGET_BUILD_VARIANT := user
+export TARGET_BUILD_VARIANT
+export secdog=rsa2048
 
 # We are using a recursive build, so we need to do a little thinking
 # to get the ordering right.
@@ -87,12 +90,10 @@ endif
 ifneq ($(filter 4.%,$(MAKE_VERSION)),)	# make-4
 ifneq ($(filter %s ,$(firstword x$(MAKEFLAGS))),)
   quiet=silent_
-  tools_silent=s
 endif
 else					# make-3.8x
 ifneq ($(filter s% -s%,$(MAKEFLAGS)),)
   quiet=silent_
-  tools_silent=-s
 endif
 endif
 
@@ -213,7 +214,7 @@ else
                 srctree := $(KBUILD_SRC)
         endif
 endif
-objtree		:= .
+objtree		:= $(CURDIR)
 src		:= $(srctree)
 obj		:= $(objtree)
 
@@ -301,7 +302,12 @@ CONFIG_SHELL := $(shell if [ -x "$$BASH" ]; then echo $$BASH; \
 	  else if [ -x /bin/bash ]; then echo /bin/bash; \
 	  else echo sh; fi ; fi)
 
+ifeq ($(strip $(clang)), true)
+CLANG_CROSS_COMPILE_PRE:=$(srctree)/../../prebuilts/clang/host/linux-x86/clang-4679922/bin/
+HOSTCC       = $(CLANG_CROSS_COMPILE_PRE)clang
+else
 HOSTCC       = gcc
+endif
 HOSTCXX      = g++
 HOSTCFLAGS   := -Wall -Wmissing-prototypes -Wstrict-prototypes -O2 -fomit-frame-pointer -std=gnu89
 HOSTCXXFLAGS = -O2
@@ -346,12 +352,19 @@ scripts/Kbuild.include: ;
 include scripts/Kbuild.include
 
 # Make variables (CC, etc...)
-AS		= $(CROSS_COMPILE)as
-LD		= $(CROSS_COMPILE)ld
+AS		= $(SOURCEANALYZER) $(CROSS_COMPILE)as
+LD		= $(SOURCEANALYZER) $(CROSS_COMPILE)ld
+ifeq (,$(strip $(KP_PATCH)))
+CCACHE		?= $(srctree)/../../prebuilts/misc/linux-x86/ccache/ccache
+endif
+ifeq ($(strip $(clang)), true)
+CC		= $(SOURCEANALYZER) $(wildcard $(CCACHE)) $(CLANG_CROSS_COMPILE_PRE)clang
+else
+CC		= $(SOURCEANALYZER) $(wildcard $(CCACHE)) $(CROSS_COMPILE)gcc
+endif
 LDGOLD		= $(CROSS_COMPILE)ld.gold
-CC		= $(CROSS_COMPILE)gcc
 CPP		= $(CC) -E
-AR		= $(CROSS_COMPILE)ar
+AR		= $(SOURCEANALYZER) $(CROSS_COMPILE)ar
 NM		= $(CROSS_COMPILE)nm
 STRIP		= $(CROSS_COMPILE)strip
 OBJCOPY		= $(CROSS_COMPILE)objcopy
@@ -382,20 +395,53 @@ USERINCLUDE    := \
 		-I$(objtree)/include/generated/uapi \
                 -include $(srctree)/include/linux/kconfig.h
 
+export TARGET_BOARD_PLATFORM = hi6250
 # Use LINUXINCLUDE when you must reference the include/ directory.
 # Needed to be compatible with the O= option
 LINUXINCLUDE    := \
 		-I$(srctree)/arch/$(hdr-arch)/include \
+		-I$(srctree)/arch/$(hdr-arch)/include/generated \
 		-I$(objtree)/arch/$(hdr-arch)/include/generated/uapi \
 		-I$(objtree)/arch/$(hdr-arch)/include/generated \
 		$(if $(KBUILD_SRC), -I$(srctree)/include) \
-		-I$(objtree)/include
+		-I$(objtree)/include\
+		$(USERINCLUDE)
+LINUXINCLUDE += -I$(srctree)/mm \
+		-I$(srctree)/include \
+		-I$(srctree)/include/linux/hisi \
+		-I$(srctree)/drivers \
+		-I$(srctree)/drivers/huawei_platform \
+		-I$(srctree)/fs/proc
+
+ifeq ($(CFG_LCD_KIT),true)
+LINUXINCLUDE += -I$(objtree)/drivers/devkit/lcdkit/lcdkit3.0
+else
+LINUXINCLUDE += -I$(objtree)/drivers/devkit/lcdkit/lcdkit1.0
+endif
+
+ifeq ($(strip $(TARGET_BOARD_PLATFORM)), kirin980)
+LINUXINCLUDE += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)
+else
+ifeq ($(chip_type),es)
+LINUXINCLUDE += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)_es
+else
+ifeq ($(chip_type),m536)
+LINUXINCLUDE += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)_m536
+else
+LINUXINCLUDE += -I$(srctree)/drivers/hisi/ap/platform/$(TARGET_BOARD_PLATFORM)
+endif
+endif
+endif
+
+ifneq ($(BALONG_INC),)
+LINUXINCLUDE       += $(BALONG_INC)
+endif
 
 LINUXINCLUDE	+= $(filter-out $(LINUXINCLUDE),$(USERINCLUDE))
 
 KBUILD_AFLAGS   := -D__ASSEMBLY__
 KBUILD_CFLAGS   := -Wall -Wundef -Wstrict-prototypes -Wno-trigraphs \
-		   -fno-strict-aliasing -fno-common \
+		   -fno-strict-aliasing -fno-common -fshort-wchar \
 		   -Werror-implicit-function-declaration \
 		   -Wno-format-security \
 		   -std=gnu89
@@ -411,6 +457,29 @@ GCC_PLUGINS_CFLAGS :=
 KERNELRELEASE = $(shell cat include/config/kernel.release 2> /dev/null)
 KERNELVERSION = $(VERSION)$(if $(PATCHLEVEL),.$(PATCHLEVEL)$(if $(SUBLEVEL),.$(SUBLEVEL)))$(EXTRAVERSION)
 
+# build drv only config
+OBB_SEPARATE        ?=$(separate)
+ifeq ($(strip $(OBB_SEPARATE)),true)
+KBUILD_CFLAGS += -DDRV_BUILD_SEPARATE
+KBUILD_AFLAGS += -DDRV_BUILD_SEPARATE
+KBUILD_CPPFLAGS += -DDRV_BUILD_SEPARATE
+endif
+
+#add SLT FEATURE to ap
+ifeq ($(strip $(hitest_type)),slt)
+KBUILD_CFLAGS += -D__SLT_FEATURE__
+endif
+
+ifneq ($(BALONG_FAMA_FLAGS),)
+KBUILD_CFLAGS += $(BALONG_FAMA_FLAGS)
+endif
+
+OBB_PRODUCT_NAME = hi6250
+CFG_PLATFORM = hi6250
+TARGET_ARM_TYPE = arm64
+export OBB_PRODUCT_NAME CFG_PLATFORM TARGET_ARM_TYPE 
+# add hisilicon balong configs end
+
 export VERSION PATCHLEVEL SUBLEVEL KERNELRELEASE KERNELVERSION
 export ARCH SRCARCH CONFIG_SHELL HOSTCC HOSTCFLAGS CROSS_COMPILE AS LD CC
 export CPP AR NM STRIP OBJCOPY OBJDUMP
@@ -418,7 +487,8 @@ export MAKE AWK GENKSYMS INSTALLKERNEL PERL PYTHON UTS_MACHINE
 export HOSTCXX HOSTCXXFLAGS LDFLAGS_MODULE CHECK CHECKFLAGS
 
 export KBUILD_CPPFLAGS NOSTDINC_FLAGS LINUXINCLUDE OBJCOPYFLAGS LDFLAGS
-export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE CFLAGS_KASAN CFLAGS_UBSAN
+export KBUILD_CFLAGS CFLAGS_KERNEL CFLAGS_MODULE
+export CFLAGS_KASAN CFLAGS_KASAN_NOSANITIZE CFLAGS_UBSAN
 export KBUILD_AFLAGS AFLAGS_KERNEL AFLAGS_MODULE
 export KBUILD_AFLAGS_MODULE KBUILD_CFLAGS_MODULE KBUILD_LDFLAGS_MODULE
 export KBUILD_AFLAGS_KERNEL KBUILD_CFLAGS_KERNEL
@@ -554,7 +624,7 @@ ifeq ($(KBUILD_EXTMOD),)
 # in parallel
 PHONY += scripts
 scripts: scripts_basic include/config/auto.conf include/config/tristate.conf \
-	 asm-generic gcc-plugins
+	 asm-generic
 	$(Q)$(MAKE) $(build)=$(@)
 
 # Objects we will link into vmlinux / subdirs we need to visit
@@ -620,21 +690,24 @@ all: vmlinux
 
 KBUILD_CFLAGS	+= $(call cc-option,-fno-PIE)
 KBUILD_AFLAGS	+= $(call cc-option,-fno-PIE)
-CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage -fno-tree-loop-im $(call cc-disable-warning,maybe-uninitialized,)
+CFLAGS_GCOV	:= -fprofile-arcs -ftest-coverage \
+	$(call cc-option, -fno-tree-loop-im) \
+	$(call cc-disable-warning,maybe-uninitialized,)
 CFLAGS_KCOV	:= $(call cc-option,-fsanitize-coverage=trace-pc,)
 export CFLAGS_GCOV CFLAGS_KCOV
 
 # Make toolchain changes before including arch/$(SRCARCH)/Makefile to ensure
 # ar/cc/ld-* macros return correct values.
 ifdef CONFIG_LTO_CLANG
+CLANG_LIBS_PRE:=$(srctree)/../../prebuilts/clang/host/linux-x86/clang-4679922/lib64/
 # use GNU gold with LLVMgold for LTO linking, and LD for vmlinux_link
 LDFINAL_vmlinux := $(LD)
 LD		:= $(LDGOLD)
-LDFLAGS		+= -plugin LLVMgold.so
+LDFLAGS		+= -plugin $(CLANG_LIBS_PRE)LLVMgold.so
 # use llvm-ar for building symbol tables from IR files, and llvm-dis instead
 # of objdump for processing symbol versions and exports
-LLVM_AR		:= llvm-ar
-LLVM_DIS	:= llvm-dis
+LLVM_AR		:= $(CLANG_CROSS_COMPILE_PRE)llvm-ar
+LLVM_DIS	:= $(CLANG_CROSS_COMPILE_PRE)llvm-dis
 export LLVM_AR LLVM_DIS
 endif
 
@@ -727,7 +800,6 @@ ifeq ($(shell $(CONFIG_SHELL) $(srctree)/scripts/gcc-goto.sh $(CC) $(KBUILD_CFLA
 	KBUILD_AFLAGS += -DCC_HAVE_ASM_GOTO
 endif
 
-include scripts/Makefile.gcc-plugins
 
 ifdef CONFIG_READABLE_ASM
 # Disable optimizations that make assembler listings hard to read.
@@ -743,6 +815,54 @@ ifneq ($(CONFIG_FRAME_WARN),0)
 KBUILD_CFLAGS += $(call cc-option,-Wframe-larger-than=${CONFIG_FRAME_WARN})
 endif
 
+ifeq ($(use_hash_log),true)
+KBUILD_CFLAGS += -fplugin=$(srctree)/../../prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/libexec/gcc/aarch64-linux-android/4.9.x/hashlog.so
+KBUILD_CFLAGS += -fplugin-arg-hashlog-keyconfdir=$(srctree)/../../vendor/hisi/ap/build/core/kernel_hash_key_config.txt
+ifeq ($(gen_loghash_file),true)
+KBUILD_CFLAGS += -fplugin-arg-hashlog-genkeyfile
+endif
+endif
+
+#KBUILD_CFLAGS += -fplugin=$(srctree)/../../prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/libexec/gcc/aarch64-linux-android/4.9.x/cfi.so -fplugin-arg-cfi-logfault
+ifdef CONFIG_HUAWEI_CFI
+KBUILD_CFLAGS += -fplugin=$(srctree)/../../prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/libexec/gcc/aarch64-linux-android/4.9.x/cfi.so -fplugin-arg-cfi-abortfn=__cfi_report
+KBUILD_CFLAGS += -fplugin-arg-cfi-tagvalue=$(CONFIG_HUAWEI_CFI_TAG)
+ifeq ($(CONFIG_HUAWEI_CFI_DEBUG),y)
+KBUILD_CFLAGS += -DHW_SAVE_CFI_LOG
+endif
+endif
+## kernel struct layout randomize
+ifdef CONFIG_GCC_PLUGIN_RANDSTRUCT
+###!!!!!! only support 100 white list ,and etch item must less than 64 ,split by ,
+rand_struct_whitelist=/rand_struct_whitelist_do_nothing/
+#rand_struct_whitelist=/modem/,/hisi/,/connectivity/,/wifi/,drivers/spmi_hisi/,drivers/hwusb/,drivers/rphone/,drivers/media/,drivers/vcodec/
+KBUILD_CFLAGS += -fplugin=$(srctree)/../../prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/libexec/gcc/aarch64-linux-android/4.9.x/randomize_layout.so
+RANDSTRUCT_SEED_VALUE = $(shell cat $(srctree)/randomize_layout_seed)
+KBUILD_CFLAGS += -fplugin-arg-randomize_layout-seed=$(RANDSTRUCT_SEED_VALUE)
+KBUILD_CFLAGS += -fplugin-arg-randomize_layout-whitelist=$(rand_struct_whitelist)
+
+ifdef CONFIG_GCC_PLUGIN_RANDSTRUCT_PERFORMANCE
+KBUILD_CFLAGS += -fplugin-arg-randomize_layout-performance-mode
+endif
+#KBUILD_CFLAGS += -fplugin-arg-randomize_layout-check_duplicate
+
+ifneq ($(RANDSTRUCT_SEED_VALUE),)
+ifdef CONFIG_GCC_PLUGIN_RANDSTRUCT_OPERATIONS
+KBUILD_CFLAGS += -fplugin-arg-randomize_layout-include_operations_struct
+endif
+KBUILD_CFLAGS += -DRANDSTRUCT_PLUGIN
+endif
+
+endif
+
+ifdef CONFIG_GCC_PLUGIN_STRUCTLEAK
+KBUILD_CFLAGS += -fplugin=$(srctree)/../../prebuilts/gcc/linux-x86/aarch64/aarch64-linux-android-4.9/libexec/gcc/aarch64-linux-android/4.9.x/structleak.so
+KBUILD_CFLAGS += -fplugin-arg-structleak-verbose
+##byref-all means all struct should be forcibly initialized, default initialized struct copy to user
+##KBUILD_CFLAGS += -fplugin-arg-structleak-byref-all
+
+KBUILD_CFLAGS += -DSTRUCTLEAK_PLUGIN
+endif
 # This selects the stack protector compiler flag. Testing it is delayed
 # until after .config has been reprocessed, in the prepare-compiler-check
 # target.
@@ -784,6 +904,12 @@ KBUILD_CFLAGS += $(call cc-disable-warning, address-of-packed-member)
 KBUILD_CFLAGS += $(call cc-disable-warning, duplicate-decl-specifier)
 # Quiet clang warning: comparison of unsigned expression < 0 is always false
 KBUILD_CFLAGS += $(call cc-disable-warning, tautological-compare)
+
+ifeq ($(strip $(clang)), true)
+KBUILD_CFLAGS += -Wno-error=return-type
+KBUILD_CFLAGS += -Wno-error=unknown-warning-option
+endif
+
 # CLANG uses a _MergedGlobals as optimization, but this breaks modpost, as the
 # source of a reference will be _MergedGlobals and not on of the whitelisted names.
 # See modpost pattern 2
@@ -864,6 +990,9 @@ KBUILD_CFLAGS += $(call cc-option,-Wdeclaration-after-statement,)
 # disable pointer signed / unsigned warnings in gcc 4.0
 KBUILD_CFLAGS += $(call cc-disable-warning, pointer-sign)
 
+# disable stringop warnings in gcc 8+
+KBUILD_CFLAGS += $(call cc-disable-warning, stringop-truncation)
+
 # disable invalid "can't wrap" optimizations for signed / pointers
 KBUILD_CFLAGS	+= $(call cc-option,-fno-strict-overflow)
 
@@ -889,14 +1018,24 @@ KBUILD_CFLAGS   += $(call cc-option,-Werror=implicit-int)
 KBUILD_CFLAGS   += $(call cc-option,-Werror=strict-prototypes)
 
 # Prohibit date/time macros, which would make the build non-deterministic
-KBUILD_CFLAGS   += $(call cc-option,-Werror=date-time)
+#KBUILD_CFLAGS   += $(call cc-option,-Werror=date-time)
 
+ifneq ($(strip $(clang)), true)
 # enforce correct pointer usage
 KBUILD_CFLAGS   += $(call cc-option,-Werror=incompatible-pointer-types)
+endif
 
 # use the deterministic mode of AR if available
 KBUILD_ARFLAGS := $(call ar-option,D)
 
+# check for 'asm goto'
+
+ifeq ($(SET_SYSTEM_PARTITION), oversea)
+    KBUILD_CFLAGS += -DCONFIG_MARKET_OVERSEA
+endif
+ifeq ($(SET_SYSTEM_PARTITION), internal)
+    KBUILD_CFLAGS += -DCONFIG_MARKET_INTERNAL
+endif
 include scripts/Makefile.kasan
 include scripts/Makefile.extrawarn
 include scripts/Makefile.ubsan
@@ -916,7 +1055,9 @@ LDFLAGS_vmlinux += $(LDFLAGS_BUILD_ID)
 ifdef CONFIG_LD_DEAD_CODE_DATA_ELIMINATION
 LDFLAGS_vmlinux	+= $(call ld-option, --gc-sections,)
 endif
-
+ifeq ($(ARCH),arm64)
+LDFLAGS_vmlinux += --fix-cortex-a53-843419
+endif
 ifeq ($(CONFIG_STRIP_ASM_SYMS),y)
 LDFLAGS_vmlinux	+= $(call ld-option, -X,)
 endif
@@ -996,8 +1137,11 @@ INITRD_COMPRESS-$(CONFIG_RD_LZ4)   := lz4
 
 ifdef CONFIG_MODULE_SIG_ALL
 $(eval $(call config_filename,MODULE_SIG_KEY))
-
+ifneq ($(CONFIG_MODULE_SIG_KEY),"huawei_signing_key.pem")
 mod_sign_cmd = scripts/sign-file $(CONFIG_MODULE_SIG_HASH) $(MODULE_SIG_KEY_SRCPREFIX)$(CONFIG_MODULE_SIG_KEY) certs/signing_key.x509
+else
+mod_sign_cmd = $(CONFIG_SHELL) $(srctree)/../../build/tools/signkernel/sign-kernel.sh
+endif
 else
 mod_sign_cmd = true
 endif
@@ -1023,6 +1167,9 @@ libs-y2		:= $(patsubst %/, %/built-in.o, $(libs-y))
 libs-y		:= $(libs-y1) $(libs-y2)
 virt-y		:= $(patsubst %/, %/built-in.o, $(virt-y))
 
+vmlinux-init := $(head-y) $(init-y)
+vmlinux-main := $(core-y) $(libs-y) $(drivers-y) $(net-y) $(virt-y)
+vmlinux-all  := $(vmlinux-init) $(vmlinux-main)
 # Externally visible symbols (used by link-vmlinux.sh)
 export KBUILD_VMLINUX_INIT := $(head-y) $(init-y)
 export KBUILD_VMLINUX_MAIN := $(core-y) $(libs-y) $(drivers-y) $(net-y) $(virt-y)
@@ -1061,7 +1208,18 @@ ARCH_POSTLINK := $(wildcard $(srctree)/arch/$(SRCARCH)/Makefile.postlink)
 	$(if $(ARCH_POSTLINK), $(MAKE) -f $(ARCH_POSTLINK) $@, true)
 
 vmlinux: scripts/link-vmlinux.sh vmlinux_prereq $(vmlinux-deps) FORCE
+ifeq ($(OBB_PRINT_CMD), true)
+	$(call if_changed,link-vmlinux)
+else
+ifeq ($(link_kernel),false)
+	$(Q)$(CONFIG_SHELL) $(srctree)/scripts/gen-link-vmlinux.sh $(vmlinux-deps)
+else
 	+$(call if_changed,link-vmlinux)
+endif
+endif
+#ifdef CONFIG_GCC_PLUGIN_RANDSTRUCT
+#	$(hide) $(PYTHON) $(srctree)/scripts/duplicated_struct_definition.py -s $(srctree) -w $(rand_struct_whitelist)
+#endif
 
 # Build samples along the rest of the kernel
 ifdef CONFIG_SAMPLES
@@ -1124,11 +1282,11 @@ prepare1: prepare2 $(version_h) include/generated/utsrelease.h \
 
 archprepare: archheaders archscripts prepare1 scripts_basic
 
-prepare0: archprepare gcc-plugins
+prepare0: archprepare
 	$(Q)$(MAKE) $(build)=.
 
 # All the preparing..
-prepare: prepare0 prepare-objtool
+prepare: vdso_prepare prepare0 prepare-objtool
 
 ifdef CONFIG_STACK_VALIDATION
   has_libelf := $(call try-run,\
@@ -1313,6 +1471,9 @@ modules: $(vmlinux-dirs) $(if $(KBUILD_BUILTIN),vmlinux) modules.builtin
 	@$(kecho) '  Building modules, stage 2.';
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.modpost
 	$(Q)$(MAKE) -f $(srctree)/scripts/Makefile.fwinst obj=firmware __fw_modbuild
+#ifdef CONFIG_GCC_PLUGIN_RANDSTRUCT
+#	$(hide) $(PYTHON) $(srctree)/scripts/duplicated_struct_definition.py -s $(srctree) -w $(rand_struct_whitelist)
+#endif
 
 modules.builtin: $(vmlinux-dirs:%=%/modules.builtin)
 	$(Q)$(AWK) '!x[$$0]++' $^ > $(objtree)/modules.builtin
@@ -1323,7 +1484,7 @@ modules.builtin: $(vmlinux-dirs:%=%/modules.builtin)
 
 # Target to prepare building external modules
 PHONY += modules_prepare
-modules_prepare: prepare scripts
+modules_prepare: prepare scripts vdso_prepare
 
 # Target to install modules
 PHONY += modules_install
@@ -1727,11 +1888,11 @@ image_name:
 # Clear a bunch of variables before executing the submake
 tools/: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/
 
 tools/%: FORCE
 	$(Q)mkdir -p $(objtree)/tools
-	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(tools_silent) $(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/ $*
+	$(Q)$(MAKE) LDFLAGS= MAKEFLAGS="$(filter --j% -j,$(MAKEFLAGS))" O=$(shell cd $(objtree) && /bin/pwd) subdir=tools -C $(src)/tools/ $*
 
 # Single targets
 # ---------------------------------------------------------------------------
@@ -1823,3 +1984,8 @@ FORCE:
 # Declare the contents of the .PHONY variable as phony.  We keep that
 # information in a variable so we can use it in if_changed and friends.
 .PHONY: $(PHONY)
+do_pc_lint_all : build = -f $(if $(KBUILD_SRC),$(srctree)/)scripts/Makefile.build new_pc_lint obj
+do_pc_lint_all : $(vmlinux-all) FORCE
+	@:
+
+pc_lint_all : do_pc_lint_all

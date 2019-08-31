@@ -177,7 +177,9 @@ cifs_reconnect_tcon(struct cifs_tcon *tcon, int smb_command)
 	if (!ses->need_reconnect && !tcon->need_reconnect)
 		return 0;
 
-	nls_codepage = load_nls_default();
+	nls_codepage = load_nls(CONFIG_CIFS_DEFAULT);
+	if (NULL == nls_codepage)
+		nls_codepage = load_nls_default();
 
 	/*
 	 * need to prevent multiple threads trying to simultaneously
@@ -577,10 +579,15 @@ CIFSSMBNegotiate(const unsigned int xid, struct cifs_ses *ses)
 	}
 
 	count = 0;
+	/*
+	 * We know that all the name entries in the protocols array
+	 * are short (< 16 bytes anyway) and are NUL terminated.
+	 */
 	for (i = 0; i < CIFS_NUM_PROT; i++) {
-		strncpy(pSMB->DialectsArray+count, protocols[i].name, 16);
-		count += strlen(protocols[i].name) + 1;
-		/* null at end of source and target buffers anyway */
+		size_t len = strlen(protocols[i].name) + 1;
+
+		memcpy(pSMB->DialectsArray+count, protocols[i].name, len);
+		count += len;
 	}
 	inc_rfc1001_len(pSMB, count);
 	pSMB->ByteCount = cpu_to_le16(count);

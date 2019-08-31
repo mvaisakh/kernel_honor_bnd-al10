@@ -135,6 +135,7 @@ static void *__kmalloc_reserve(size_t size, gfp_t flags, int node,
 	 * Try a regular allocation, when that fails and we're not entitled
 	 * to the reserves, fail.
 	 */
+	flags |= __GFP_DMA;
 	obj = kmalloc_node_track_caller(size,
 					flags | __GFP_NOMEMALLOC | __GFP_NOWARN,
 					node);
@@ -164,7 +165,7 @@ struct sk_buff *__alloc_skb_head(gfp_t gfp_mask, int node)
 
 	/* Get the HEAD */
 	skb = kmem_cache_alloc_node(skbuff_head_cache,
-				    gfp_mask & ~__GFP_DMA, node);
+				    gfp_mask | __GFP_DMA, node);
 	if (!skb)
 		goto out;
 
@@ -216,7 +217,7 @@ struct sk_buff *__alloc_skb(unsigned int size, gfp_t gfp_mask,
 		gfp_mask |= __GFP_MEMALLOC;
 
 	/* Get the HEAD */
-	skb = kmem_cache_alloc_node(cache, gfp_mask & ~__GFP_DMA, node);
+	skb = kmem_cache_alloc_node(cache, gfp_mask | __GFP_DMA, node);
 	if (!skb)
 		goto out;
 	prefetchw(skb);
@@ -307,7 +308,7 @@ struct sk_buff *__build_skb(void *data, unsigned int frag_size)
 	struct sk_buff *skb;
 	unsigned int size = frag_size ? : ksize(data);
 
-	skb = kmem_cache_alloc(skbuff_head_cache, GFP_ATOMIC);
+	skb = kmem_cache_alloc(skbuff_head_cache, GFP_ATOMIC | __GFP_DMA);
 	if (!skb)
 		return NULL;
 
@@ -562,7 +563,10 @@ static inline void skb_drop_fraglist(struct sk_buff *skb)
 	skb_drop_list(&skb_shinfo(skb)->frag_list);
 }
 
-static void skb_clone_fraglist(struct sk_buff *skb)
+#ifndef CONFIG_MPTCP
+static
+#endif
+void skb_clone_fraglist(struct sk_buff *skb)
 {
 	struct sk_buff *list;
 
@@ -1031,7 +1035,7 @@ struct sk_buff *skb_clone(struct sk_buff *skb, gfp_t gfp_mask)
 		if (skb_pfmemalloc(skb))
 			gfp_mask |= __GFP_MEMALLOC;
 
-		n = kmem_cache_alloc(skbuff_head_cache, gfp_mask);
+		n = kmem_cache_alloc(skbuff_head_cache, gfp_mask | __GFP_DMA);
 		if (!n)
 			return NULL;
 
@@ -1058,7 +1062,10 @@ static void skb_headers_offset_update(struct sk_buff *skb, int off)
 	skb->inner_mac_header += off;
 }
 
-static void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
+#ifndef CONFIG_MPTCP
+static
+#endif
+void copy_skb_header(struct sk_buff *new, const struct sk_buff *old)
 {
 	__copy_skb_header(new, old);
 
@@ -3469,12 +3476,12 @@ void __init skb_init(void)
 	skbuff_head_cache = kmem_cache_create("skbuff_head_cache",
 					      sizeof(struct sk_buff),
 					      0,
-					      SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+					      SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_CACHE_DMA,
 					      NULL);
 	skbuff_fclone_cache = kmem_cache_create("skbuff_fclone_cache",
 						sizeof(struct sk_buff_fclones),
 						0,
-						SLAB_HWCACHE_ALIGN|SLAB_PANIC,
+						SLAB_HWCACHE_ALIGN|SLAB_PANIC|SLAB_CACHE_DMA,
 						NULL);
 }
 
@@ -4398,6 +4405,10 @@ void skb_scrub_packet(struct sk_buff *skb, bool xnet)
 	secpath_reset(skb);
 	nf_reset(skb);
 	nf_reset_trace(skb);
+
+#ifdef CONFIG_NET_SWITCHDEV
+	skb->offload_fwd_mark = 0;
+#endif
 
 	if (!xnet)
 		return;

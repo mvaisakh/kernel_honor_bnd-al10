@@ -17,6 +17,8 @@
 #include <linux/usb/hcd.h>	/* for usbcore internals */
 #include <asm/byteorder.h>
 
+#include <linux/hisi/usb/hisi_usb.h>
+
 #include "usb.h"
 
 static void cancel_async_set_config(struct usb_device *udev);
@@ -1279,6 +1281,11 @@ void usb_enable_interface(struct usb_device *dev,
  * is submitted that needs that bandwidth.  Some other operating systems
  * allocate bandwidth early, when a configuration is chosen.
  *
+ * xHCI reserves bandwidth and configures the alternate setting in
+ * usb_hcd_alloc_bandwidth(). If it fails the original interface altsetting
+ * may be disabled. Drivers cannot rely on any particular alternate
+ * setting being in effect after a failure.
+ *
  * This call is synchronous, and may not be used in an interrupt context.
  * Also, drivers must not change altsettings while urbs are scheduled for
  * endpoints in that interface; all such urbs must first be completed
@@ -1314,6 +1321,12 @@ int usb_set_interface(struct usb_device *dev, int interface, int alternate)
 			 alternate);
 		return -EINVAL;
 	}
+	/*
+	 * usb3 hosts configure the interface in usb_hcd_alloc_bandwidth,
+	 * including freeing dropped endpoint ring buffers.
+	 * Make sure the interface endpoints are flushed before that
+	 */
+	usb_disable_interface(dev, iface, false);
 
 	/* Make sure we have enough bandwidth for this alternate interface.
 	 * Remove the current alt setting and add the new alt setting.
@@ -1782,10 +1795,12 @@ free_interfaces:
 		}
 
 		i = dev->bus_mA - usb_get_max_power(dev, cp);
-		if (i < 0)
+		if (i < 0) {
+			hw_usb_host_abnormal_event_notify(USB_HOST_EVENT_POWER_INSUFFICIENT);
 			dev_warn(&dev->dev, "new config #%d exceeds power "
 					"limit by %dmA\n",
 					configuration, -i);
+		}
 	}
 
 	/* Wake up the device so we can send it the Set-Config request */

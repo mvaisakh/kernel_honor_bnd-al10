@@ -2066,15 +2066,9 @@ static int intel_pmu_handle_irq(struct pt_regs *regs)
 	int bit, loops;
 	u64 status;
 	int handled;
-	int pmu_enabled;
 
 	cpuc = this_cpu_ptr(&cpu_hw_events);
 
-	/*
-	 * Save the PMU state.
-	 * It needs to be restored when leaving the handler.
-	 */
-	pmu_enabled = cpuc->enabled;
 	/*
 	 * No known reason to not always do late ACK,
 	 * but just in case do it opt-in.
@@ -2082,7 +2076,6 @@ static int intel_pmu_handle_irq(struct pt_regs *regs)
 	if (!x86_pmu.late_ack)
 		apic_write(APIC_LVTPC, APIC_DM_NMI);
 	intel_bts_disable_local();
-	cpuc->enabled = 0;
 	__intel_pmu_disable_all();
 	handled = intel_pmu_drain_bts_buffer();
 	handled += intel_bts_interrupt();
@@ -2180,8 +2173,7 @@ again:
 
 done:
 	/* Only restore PMU state when it's active. See x86_pmu_disable(). */
-	cpuc->enabled = pmu_enabled;
-	if (pmu_enabled)
+	if (cpuc->enabled)
 		__intel_pmu_enable_all(0, true);
 	intel_bts_enable_local();
 
@@ -3027,13 +3019,13 @@ hsw_get_event_constraints(struct cpu_hw_events *cpuc, int idx,
  * Therefore the effective (average) period matches the requested period,
  * despite coarser hardware granularity.
  */
-static u64 bdw_limit_period(struct perf_event *event, u64 left)
+static unsigned bdw_limit_period(struct perf_event *event, unsigned left)
 {
 	if ((event->hw.config & INTEL_ARCH_EVENT_MASK) ==
 			X86_CONFIG(.event=0xc0, .umask=0x01)) {
 		if (left < 128)
 			left = 128;
-		left &= ~0x3fULL;
+		left &= ~0x3fu;
 	}
 	return left;
 }
@@ -3371,7 +3363,7 @@ static int intel_snb_pebs_broken(int cpu)
 		break;
 
 	case INTEL_FAM6_SANDYBRIDGE_X:
-		switch (cpu_data(cpu).x86_stepping) {
+		switch (cpu_data(cpu).x86_mask) {
 		case 6: rev = 0x618; break;
 		case 7: rev = 0x70c; break;
 		}
