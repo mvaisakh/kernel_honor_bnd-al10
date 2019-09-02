@@ -1007,7 +1007,7 @@ int32 sdio_device_mem_dump(struct st_wifi_dump_mem_info *pst_mem_dump_info, uint
 int32 sdio_read_mem(uint8 *Key, uint8 *Value)
 {
     int32 l_ret = -EFAIL;
-    int32 size;
+    int32 size=0;
     uint8 *flag;
     OS_KERNEL_FILE_STRU *fp;
     uint8 *pucDataBuf = NULL;
