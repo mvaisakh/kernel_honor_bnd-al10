@@ -268,7 +268,6 @@ static inline void fq_unlink(struct inet_frag_queue *fq, struct inet_frags *f)
 {
 
 	struct inet_frag_bucket *hb;
-	nf->high_thresh = 0; /* prevent creation of new frags */
 
 	hb = get_frag_bucket_locked(fq, f);
 	hlist_del(&fq->list);
