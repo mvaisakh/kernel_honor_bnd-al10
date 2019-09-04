@@ -1,35 +1,35 @@
 /*
- * Copyright (c) 2006 Oracle.  All rights reserved.
- *
- * This software is available to you under a choice of one of two
- * licenses.  You may choose to be licensed under the terms of the GNU
- * General Public License (GPL) Version 2, available from the file
- * COPYING in the main directory of this source tree, or the
- * OpenIB.org BSD license below:
- *
- *     Redistribution and use in source and binary forms, with or
- *     without modification, are permitted provided that the following
- *     conditions are met:
- *
- *      - Redistributions of source code must retain the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer.
- *
- *      - Redistributions in binary form must reproduce the above
- *        copyright notice, this list of conditions and the following
- *        disclaimer in the documentation and/or other materials
- *        provided with the distribution.
- *
- * THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
- * EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
- * MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
- * NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
- * BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
- * ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
- * CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
- * SOFTWARE.
- *
- */
+* Copyright (c) 2006 Oracle.  All rights reserved.
+*
+* This software is available to you under a choice of one of two
+* licenses.  You may choose to be licensed under the terms of the GNU
+* General Public License (GPL) Version 2, available from the file
+* COPYING in the main directory of this source tree, or the
+* OpenIB.org BSD license below:
+*
+*     Redistribution and use in source and binary forms, with or
+*     without modification, are permitted provided that the following
+*     conditions are met:
+*
+*      - Redistributions of source code must retain the above
+*        copyright notice, this list of conditions and the following
+*        disclaimer.
+*
+*      - Redistributions in binary form must reproduce the above
+*        copyright notice, this list of conditions and the following
+*        disclaimer in the documentation and/or other materials
+*        provided with the distribution.
+*
+* THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND,
+* EXPRESS OR IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF
+* MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE AND
+* NONINFRINGEMENT. IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS
+* BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER LIABILITY, WHETHER IN AN
+* ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM, OUT OF OR IN
+* CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+* SOFTWARE.
+*
+*/
 #include <linux/kernel.h>
 #include <net/sock.h>
 #include <linux/in.h>
@@ -41,30 +41,32 @@
 static struct rhashtable bind_hash_table;
 
 static struct rhashtable_params ht_parms = {
-	.nelem_hint = 768,
-	.key_len = sizeof(u64),
-	.key_offset = offsetof(struct rds_sock, rs_bound_key),
-	.head_offset = offsetof(struct rds_sock, rs_bound_node),
-	.max_size = 16384,
-	.min_size = 1024,
+.nelem_hint = 768,
+.key_len = sizeof(u64),
+.key_offset = offsetof(struct rds_sock, rs_bound_key),
+.head_offset = offsetof(struct rds_sock, rs_bound_node),
+.max_size = 16384,
+.min_size = 1024,
 };
 
 /*
- * Return the rds_sock bound at the given local address.
- *
- * The rx path can race with rds_release.  We notice if rds_release() has
- * marked this socket and don't return a rs ref to the rx path.
- */
+* Return the rds_sock bound at the given local address.
+*
+* The rx path can race with rds_release.  We notice if rds_release() has
+* marked this socket and don't return a rs ref to the rx path.
+*/
 struct rds_sock *rds_find_bound(__be32 addr, __be16 port)
 {
-	u64 key = ((u64)addr << 32) | port;
-	struct rds_sock *rs;
+u64 key = ((u64)addr << 32) | port;
+struct rds_sock *rs;
 
-	rs = rhashtable_lookup_fast(&bind_hash_table, &key, ht_parms);
-	if (rs && !sock_flag(rds_rs_to_sk(rs), SOCK_DEAD))
-		rds_sock_addref(rs);
-	else
+	rcu_read_lock();
+	rs = rhashtable_lookup(&bind_hash_table, &key, ht_parms);
+	if (rs && (sock_flag(rds_rs_to_sk(rs), SOCK_DEAD) ||
+		   !atomic_inc_not_zero(&rds_rs_to_sk(rs)->sk_refcnt)))
 		rs = NULL;
+
+	rcu_read_unlock();
 
 	rdsdebug("returning rs %p for %pI4:%u\n", rs, &addr,
 		ntohs(port));
