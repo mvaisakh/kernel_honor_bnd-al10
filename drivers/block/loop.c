@@ -1599,7 +1599,7 @@ static void __lo_release(struct loop_device *lo)
 		loop_flush(lo);
 	}
 	
-	mutex_unlock(&lo->lo_ctl_mutex)
+	mutex_unlock(&lo->lo_ctl_mutex);
 }
 
 static void lo_release(struct gendisk *disk, fmode_t mode)
