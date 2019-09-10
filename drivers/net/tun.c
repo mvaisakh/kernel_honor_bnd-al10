@@ -1277,11 +1277,12 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		err = skb_copy_datagram_from_iter(skb, 0, from, len);
 
 	if (err) {
+		err = -EFAULT;
+drop:
 		this_cpu_inc(tun->pcpu_stats->rx_dropped);
 		kfree_skb(skb);
-		return -EFAULT;
+		return err;
 	}
-
 	err = virtio_net_hdr_to_skb(skb, &gso, tun_is_little_endian(tun));
 	if (err) {
 		this_cpu_inc(tun->pcpu_stats->rx_frame_errors);
