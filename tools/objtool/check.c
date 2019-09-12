@@ -1281,41 +1281,73 @@ static void cleanup(struct objtool_file *file)
 	elf_close(file->elf);
 }
 
-int check(const char *_objname, bool _nofp)
+static struct objtool_file file;
+
+int check(const char *_objname, bool orc)
 {
-	struct objtool_file file;
 	int ret, warnings = 0;
 
 	objname = _objname;
-	nofp = _nofp;
 
-	file.elf = elf_open(objname);
-	if (!file.elf) {
-		fprintf(stderr, "error reading elf file %s\n", objname);
+	file.elf = elf_open(objname, orc ? O_RDWR : O_RDONLY);
+	if (!file.elf)
 		return 1;
-	}
 
 	INIT_LIST_HEAD(&file.insn_list);
 	hash_init(file.insn_hash);
 	file.whitelist = find_section_by_name(file.elf, ".discard.func_stack_frame_non_standard");
 	file.rodata = find_section_by_name(file.elf, ".rodata");
-	file.ignore_unreachables = false;
 	file.c_file = find_section_by_name(file.elf, ".comment");
+	file.ignore_unreachables = no_unreachable;
+	file.hints = false;
+
+	arch_initial_func_cfi_state(&initial_func_cfi);
 
 	ret = decode_sections(&file);
 	if (ret < 0)
 		goto out;
 	warnings += ret;
 
+	if (list_empty(&file.insn_list))
+		goto out;
+
+	if (retpoline) {
+		ret = validate_retpoline(&file);
+		if (ret < 0)
+			return ret;
+		warnings += ret;
+	}
+
 	ret = validate_functions(&file);
 	if (ret < 0)
 		goto out;
 	warnings += ret;
 
-	ret = validate_uncallable_instructions(&file);
+	ret = validate_unwind_hints(&file);
 	if (ret < 0)
 		goto out;
 	warnings += ret;
+
+	if (!warnings) {
+		ret = validate_reachable_instructions(&file);
+		if (ret < 0)
+			goto out;
+		warnings += ret;
+	}
+
+	if (orc) {
+		ret = create_orc(&file);
+		if (ret < 0)
+			goto out;
+
+		ret = create_orc_sections(&file);
+		if (ret < 0)
+			goto out;
+
+		ret = elf_write(file.elf);
+		if (ret < 0)
+			goto out;
+	}
 
 out:
 	cleanup(&file);

@@ -1277,11 +1277,12 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 		err = skb_copy_datagram_from_iter(skb, 0, from, len);
 
 	if (err) {
+		err = -EFAULT;
+drop:
 		this_cpu_inc(tun->pcpu_stats->rx_dropped);
 		kfree_skb(skb);
-		return -EFAULT;
+		return err;
 	}
-
 	err = virtio_net_hdr_to_skb(skb, &gso, tun_is_little_endian(tun));
 	if (err) {
 		this_cpu_inc(tun->pcpu_stats->rx_frame_errors);
@@ -1335,6 +1336,14 @@ static ssize_t tun_get_user(struct tun_struct *tun, struct tun_file *tfile,
 	skb_probe_transport_header(skb, 0);
 
 	rxhash = skb_get_hash(skb);
+
+	rcu_read_lock();
+	if (unlikely(!(tun->dev->flags & IFF_UP))) {
+		err = -EIO;
+		rcu_read_unlock();
+		goto drop;
+	}
+
 	netif_rx_ni(skb);
 
 	stats = get_cpu_ptr(tun->pcpu_stats);
@@ -1497,7 +1506,7 @@ static struct sk_buff *tun_ring_recv(struct tun_file *tfile, int noblock,
 		schedule();
 	}
 
-	current->state = TASK_RUNNING;
+	__set_current_state(TASK_RUNNING);
 	remove_wait_queue(&tfile->wq.wait, &wait);
 
 out:
