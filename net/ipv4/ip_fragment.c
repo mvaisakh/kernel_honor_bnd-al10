@@ -362,20 +362,6 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 	if (dev)
 		qp->iif = dev->ifindex;
 
-	/* Insert this fragment in the chain of fragments. */
-	skb->next = next;
-	if (!next)
-		qp->q.fragments_tail = skb;
-	if (prev)
-		prev->next = skb;
-	else
-		qp->q.fragments = skb;
-
-	dev = skb->dev;
-	if (dev) {
-		qp->iif = dev->ifindex;
-		skb->dev = NULL;
-	}
 	qp->q.stamp = skb->tstamp;
 	qp->q.meat += skb->len;
 	qp->ecn |= ecn;
@@ -397,7 +383,7 @@ static int ip_frag_queue(struct ipq *qp, struct sk_buff *skb)
 		unsigned long orefdst = skb->_skb_refdst;
 
 		skb->_skb_refdst = 0UL;
-		err = ip_frag_reasm(qp, prev, dev);
+		err = ip_frag_reasm(qp, skb, prev_tail, dev);
 		skb->_skb_refdst = orefdst;
 		if (err)
 			inet_frag_kill(&qp->q);
