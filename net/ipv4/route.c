@@ -1433,7 +1433,7 @@ static void ipv4_dst_destroy(struct dst_entry *dst)
 
 void rt_flush_dev(struct net_device *dev)
 {
-{
+
 	struct net *net = dev_net(dev);
 	struct rtable *rt;
 	int cpu;
