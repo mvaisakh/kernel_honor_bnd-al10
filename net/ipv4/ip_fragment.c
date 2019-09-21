@@ -588,28 +588,6 @@ struct sk_buff *ip_check_defrag(struct net *net, struct sk_buff *skb, u32 user)
 }
 EXPORT_SYMBOL(ip_check_defrag);
 
-unsigned int inet_frag_rbtree_purge(struct rb_root *root)
-{
-	struct rb_node *p = rb_first(root);
-	unsigned int sum = 0;
-
-	while (p) {
-		struct sk_buff *skb = rb_entry(p, struct sk_buff, rbnode);
-
-		p = rb_next(p);
-		rb_erase(&skb->rbnode, root);
-		while (skb) {
-			struct sk_buff *next = FRAG_CB(skb)->next_frag;
-
-			sum += skb->truesize;
-			kfree_skb(skb);
-			skb = next;
-		}
-	}
-	return sum;
-}
-EXPORT_SYMBOL(inet_frag_rbtree_purge);
-
 #ifdef CONFIG_SYSCTL
 static int zero;
 
