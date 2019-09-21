@@ -645,7 +645,11 @@ struct sk_buff {
 		};
 		struct rb_node	rbnode; /* used in netem & tcp stack */
 	};
-	struct sock		*sk;
+	union {
+		struct sock		*sk;
+		int			ip_defrag_offset;
+	};
+	
 	struct net_device	*dev;
 
 	/*

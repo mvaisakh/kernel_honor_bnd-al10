@@ -217,6 +217,8 @@ void inet_frag_destroy(struct inet_frag_queue *q)
 	f = nf->f;
 	if (fp) {
 		do{
+			struct sk_buff *xp = fp->next;
+			
 			sum_truesize += fp->truesize;
 			kfree_skb(fp);
 			fp = xp;
