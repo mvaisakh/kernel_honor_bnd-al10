@@ -262,9 +262,9 @@ static int ptrace_has_cap(struct user_namespace *ns, unsigned int mode)
 		return false;
 
 	if (mode & PTRACE_MODE_NOAUDIT)
-		return has_ns_capability_noaudit(current, ns, check_cap);
+		return has_ns_capability_noaudit(current, ns, CAP_SYS_PTRACE);
 	else
-		return has_ns_capability(current, ns, check_cap);
+		return has_ns_capability(current, ns, CAP_SYS_PTRACE);
 }
 
 /* Returns 0 on success, -errno on denial. */
